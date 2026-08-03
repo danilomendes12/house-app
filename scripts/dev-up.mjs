@@ -122,7 +122,7 @@ function ensureOwner() {
   if (result.status !== 0) fail('Could not provision the owner user.');
 }
 
-function startDevServer(credentials) {
+function banner(credentials, lastLine) {
   console.log(
     [
       '',
@@ -131,10 +131,43 @@ function startDevServer(credentials) {
       `  e-mails ${credentials.MAILPIT_URL}   (o magic link cai aqui)`,
       `  studio  ${credentials.STUDIO_URL}`,
       '',
-      '  Ctrl+C encerra o Next. O Supabase segue de pé — use `pnpm exec supabase stop`.',
+      `  ${lastLine}`,
       '',
     ].join('\n'),
   );
+}
+
+/** PID holding port 3000, if any. */
+function portHolder() {
+  if (process.platform === 'win32') return null;
+  const result = run('lsof', ['-ti', 'tcp:3000']);
+  return result.stdout.trim().split('\n').filter(Boolean)[0] ?? null;
+}
+
+/** Whether something is already serving the app on port 3000. */
+async function appAlreadyServing() {
+  try {
+    await fetch(`${APP_URL}/login`, { redirect: 'manual', signal: AbortSignal.timeout(2000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function startDevServer(credentials) {
+  // Starting a second dev server would silently land on port 3001 and then die, so
+  // reuse whatever is already there instead.
+  if (await appAlreadyServing()) {
+    banner(credentials, `Next já estava rodando (PID ${portHolder() ?? '?'}) — nada a fazer.`);
+    return;
+  }
+
+  const holder = portHolder();
+  if (holder) {
+    fail(`A porta 3000 está ocupada pelo PID ${holder} e não responde HTTP. Rode: kill ${holder}`);
+  }
+
+  banner(credentials, 'Ctrl+C encerra o Next. O Supabase segue de pé — `pnpm exec supabase stop`.');
 
   const dev = spawn('pnpm', ['--filter', '@finance/web', 'dev'], { stdio: 'inherit' });
   dev.on('exit', (code) => process.exit(code ?? 0));
@@ -146,4 +179,4 @@ const credentials = supabaseEnv();
 ensureEnvFile(credentials);
 assertLocalTarget();
 ensureOwner();
-startDevServer(credentials);
+await startDevServer(credentials);
