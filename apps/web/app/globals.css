@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --color-surface: oklch(1 0 0);
+  --color-surface-muted: oklch(0.97 0.005 260);
+  --color-ink: oklch(0.22 0.02 260);
+  --color-ink-muted: oklch(0.52 0.02 260);
+  --color-line: oklch(0.92 0.008 260);
+  --color-brand: oklch(0.55 0.18 285);
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-surface: oklch(0.19 0.015 265);
+    --color-surface-muted: oklch(0.24 0.017 265);
+    --color-ink: oklch(0.96 0.005 265);
+    --color-ink-muted: oklch(0.72 0.015 265);
+    --color-line: oklch(0.31 0.017 265);
+    --color-brand: oklch(0.72 0.15 285);
+  }
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--color-surface-muted);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  /* Safe areas for the installed PWA on iPhone. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}

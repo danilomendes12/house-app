@@ -16,7 +16,8 @@ App pessoal (single-user) de finanças: controle de gastos mensais com orçament
 
 ```bash
 pnpm install
-pnpm dev                 # apps/web em localhost:3000
+pnpm dev:local           # sobe tudo: Docker + Supabase + usuário dono + Next (smoke test)
+pnpm dev                 # apps/web em localhost:3000 (assume Supabase já rodando)
 pnpm typecheck           # tsc --noEmit em todos os workspaces
 pnpm test                # vitest
 pnpm lint

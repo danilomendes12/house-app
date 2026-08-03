@@ -1,0 +1,6 @@
+-- Seed data applied by `supabase db reset`.
+--
+-- The owner's e-mail is not seeded here on purpose: it is environment-specific and lives
+-- in OWNER_EMAIL. After a reset, run `pnpm db:owner` to allowlist it and create the user.
+--
+-- Phase 1 adds the default expense categories below.

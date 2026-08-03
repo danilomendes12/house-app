@@ -1,0 +1,7 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+allowBuilds:
+  # Native binaries: image optimisation (next/image) and the eslint import resolver.
+  sharp: true
+  unrs-resolver: true

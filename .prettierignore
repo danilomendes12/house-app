@@ -1,0 +1,8 @@
+pnpm-lock.yaml
+.next/
+node_modules/
+coverage/
+
+# Hand-written documents: keep the author's formatting.
+docs/
+CLAUDE.md

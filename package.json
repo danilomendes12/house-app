@@ -1,0 +1,32 @@
+{
+  "name": "my-financial-app",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.5.3",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @finance/web dev",
+    "dev:local": "node scripts/dev-up.mjs",
+    "build": "pnpm --filter @finance/web build",
+    "start": "pnpm --filter @finance/web start",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:reset": "supabase db reset",
+    "db:owner": "node scripts/create-owner.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.2.12",
+    "prettier": "^3.9.6",
+    "supabase": "^2.111.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}

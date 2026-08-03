@@ -232,12 +232,12 @@ asset_snapshots (
 ## 8. Requisitos por prioridade
 
 ### P0 — sem isso não existe produto
-- [ ] Auth single-user funcionando (signups bloqueados, RLS em tudo)
+- [x] Auth single-user funcionando (signups bloqueados, RLS em tudo) — Fase 0, validado no stack local
 - [ ] CRUD de transações manuais (web e PWA mobile) com categoria e data
 - [ ] Categorias padrão (seed) + CRUD de categorias
 - [ ] Dashboard mensal: total do mês, breakdown por categoria (donut/lista), navegação entre meses
 - [ ] Orçamento por categoria com "quanto resta" (barra de progresso)
-- [ ] Deploy na Vercel + Supabase provisionado
+- [ ] Deploy na Vercel + Supabase provisionado — código e passos prontos (ver README); falta executar nas contas
 
 ### P1 — o produto fica bom
 - [ ] Gráficos de tendência (linha, 3/6/12 meses) por categoria e total
