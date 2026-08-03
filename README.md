@@ -18,9 +18,20 @@ App pessoal (single-user) para controle de gastos mensais e acompanhamento de pa
 
 ```
 apps/web        Next.js 16 (App Router), auth e UI
-packages/shared Helpers de dinheiro (centavos/bigint) e datas (YYYY-MM-DD)
+  app/(dashboard)  telas autenticadas: resumo, lançamentos, orçamento, categorias
+  lib/db           acesso ao Postgres e conversão bigint↔centavos (server-only)
+  lib/supabase     clients e tipos gerados do schema
+packages/shared Dinheiro (centavos/bigint), datas (YYYY-MM-DD) e regras de orçamento
 supabase        Migrations SQL, seed e config do stack local
 scripts         Utilitários de operação (provisionamento do usuário dono)
+```
+
+Os tipos do banco em `apps/web/lib/supabase/database.types.ts` são gerados — depois de
+criar uma migration, rode:
+
+```bash
+pnpm exec supabase gen types typescript --local --schema public \
+  > apps/web/lib/supabase/database.types.ts
 ```
 
 ## Setup rápido
@@ -105,7 +116,7 @@ Três camadas, todas necessárias:
 ## Status das fases
 
 - [x] Fase 0 — Fundação (monorepo, Supabase, auth, CI)
-- [ ] Fase 1 — MVP Gastos (transações, categorias, orçamentos, dashboard)
+- [x] Fase 1 — MVP Gastos (transações, categorias, orçamentos, dashboard)
 - [ ] Fase 2 — Tendências + PWA
 - [ ] Fase 3 — Sync Nubank (Pluggy + CSV)
 - [ ] Fase 4 — Patrimônio

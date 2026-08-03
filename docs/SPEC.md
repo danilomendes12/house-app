@@ -233,11 +233,10 @@ asset_snapshots (
 
 ### P0 — sem isso não existe produto
 - [x] Auth single-user funcionando (signups bloqueados, RLS em tudo) — Fase 0, validado no stack local
-- [ ] CRUD de transações manuais (web e PWA mobile) com categoria e data
-- [ ] Categorias padrão (seed) + CRUD de categorias
-- [ ] Dashboard mensal: total do mês, breakdown por categoria (donut/lista), navegação entre meses
-- [ ] Orçamento por categoria com "quanto resta" (barra de progresso)
-- [ ] Deploy na Vercel + Supabase provisionado — código e passos prontos (ver README); falta executar nas contas
+- [x] CRUD de transações manuais (web e PWA mobile) com categoria e data — Fase 1
+- [x] Categorias padrão (seed) + CRUD de categorias — Fase 1; o seed é por usuário (trigger em `auth.users`), já que categorias são dados do usuário
+- [x] Dashboard mensal: total do mês, breakdown por categoria (lista com barras), navegação entre meses — Fase 1
+- [x] Orçamento por categoria com "quanto resta" (barra de progresso) — Fase 1, critérios do §9 validados no stack local
 
 ### P1 — o produto fica bom
 - [ ] Gráficos de tendência (linha, 3/6/12 meses) por categoria e total
@@ -300,4 +299,16 @@ Cada fase termina com deploy funcional. Uma fase por sessão de trabalho com o C
 - **Competência** (data da compra) e não caixa (data do pagamento da fatura).
 - Parcelamentos: **uma transação por parcela**, na data em que a parcela cai na fatura.
 - Categorias **flat** (sem hierarquia) na v1.
-- Idioma da UI: **pt-BR**; código, commits e identificadores em **inglês**.
+- Idioma da UI: **pt-BR**; código, commits e identificadores em **inglês** — inclusive os
+  segmentos de rota (`/transactions`, `/budgets`, `/categories`).
+- **Estorno abate o gasto da categoria** (Fase 1): o "gasto" de uma categoria no mês é
+  `Σ despesas − Σ receitas lançadas nela`. É o que dá sentido à regra do §6.1 de registrar
+  o estorno como `income` na mesma categoria — senão a compra estornada continuaria
+  consumindo orçamento. Categorias de `kind = 'income'` (salário) ficam fora dessa conta e
+  aparecem em uma seção separada do dashboard.
+- **Categorias padrão são semeadas por usuário**, via trigger `seed_default_categories` em
+  `auth.users`, e não em `seed.sql` — que não tem como conhecer o `user_id`. Depois de
+  criadas são dados comuns: podem ser renomeadas, arquivadas ou excluídas.
+- **Orçamento é por mês, sem herança automática:** um mês sem orçamento cadastrado não
+  herda o anterior (a categoria aparece sem barra). A tela de orçamento tem um botão de
+  "copiar do mês anterior" para o caso comum de repetir os mesmos valores.

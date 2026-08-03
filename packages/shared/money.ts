@@ -117,6 +117,35 @@ export function parseCentsOrNull(input: string): Cents | null {
   }
 }
 
+/**
+ * Serialization boundary: a `bigint` column arrives from PostgREST as a JSON number.
+ * Converts it back to {@link Cents} without ever doing arithmetic on the `number`.
+ *
+ * @throws {InvalidAmountError} if the value is not an exact integer — anything that lost
+ *   precision on the way here is a bug we want to hear about, not to round away.
+ */
+export function toCents(value: bigint | number | string): Cents {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) throw new InvalidAmountError(String(value));
+    return BigInt(value);
+  }
+  if (!/^-?\d+$/.test(value)) throw new InvalidAmountError(value);
+  return BigInt(value);
+}
+
+/**
+ * The other half of {@link toCents}: cents as a JSON-safe integer, for writes.
+ * Serialization only — never feed the result into money arithmetic.
+ *
+ * @throws {InvalidAmountError} above `Number.MAX_SAFE_INTEGER` cents (~R$ 90 trilhões).
+ */
+export function fromCents(cents: Cents): number {
+  const value = Number(cents);
+  if (!Number.isSafeInteger(value)) throw new InvalidAmountError(cents.toString());
+  return value;
+}
+
 export function sumCents(values: Iterable<Cents>): Cents {
   let total = ZERO_CENTS;
   for (const value of values) total += value;

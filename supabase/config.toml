@@ -35,7 +35,6 @@ enable_anonymous_sign_ins = false
 enable_manual_linking = false
 
 [auth.email]
-enabled = true
 # Enables the e-mail provider (magic links). Actual signups stay blocked by
 # [auth] enable_signup = false plus the allowlist trigger in the database.
 enable_signup = true

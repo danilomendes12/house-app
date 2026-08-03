@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { LogOut } from 'lucide-react';
+import { MainNav } from '@/components/main-nav';
 import { getUser } from '@/lib/supabase/server';
 import { signOut } from './actions';
 
@@ -27,7 +28,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </form>
         </div>
       </header>
-      <main className="flex-1 px-4 pb-10">{children}</main>
+
+      <MainNav />
+
+      {/* Bottom padding clears the fixed tab bar on the phone. */}
+      <main className="flex-1 px-4 pt-2 pb-28 sm:pb-10">{children}</main>
     </div>
   );
 }
