@@ -9,7 +9,7 @@ import { ZERO_CENTS, percentOfCents, type Cents } from './money';
 
 export type CategoryKind = 'expense' | 'income';
 export type TransactionType = 'expense' | 'income';
-export type TransactionSource = 'manual' | 'pluggy' | 'csv';
+export type TransactionSource = 'manual' | 'csv';
 
 /** The `null` category id — transactions waiting to be categorized. */
 export type CategoryKey = string | null;

@@ -130,10 +130,7 @@ export default async function DashboardPage({
       </div>
 
       {overview.uncategorizedCount > 0 ? (
-        <Link
-          href={{ pathname: '/transactions', query: { month } }}
-          className={`${cardClass} block px-4 py-3 text-sm`}
-        >
+        <Link href="/uncategorized" className={`${cardClass} block px-4 py-3 text-sm`}>
           {overview.uncategorizedCount}{' '}
           {overview.uncategorizedCount === 1 ? 'lançamento' : 'lançamentos'} sem categoria →
         </Link>

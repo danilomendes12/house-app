@@ -78,7 +78,6 @@ describe('day math', () => {
     expect(addDays('2026-08-31', 1)).toBe('2026-09-01');
     expect(addDays('2026-01-01', -1)).toBe('2025-12-31');
     expect(addDays('2024-02-28', 1)).toBe('2024-02-29');
-    // The 7-day safety window used by the Pluggy sync.
     expect(addDays('2026-03-03', -7)).toBe('2026-02-24');
   });
 

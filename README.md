@@ -2,26 +2,29 @@
 
 App pessoal (single-user) para controle de gastos mensais e acompanhamento de patrimônio.
 
-- **Web + PWA** (instalável no iPhone) — Next.js na Vercel
+- **Web + PWA** (instalável no iPhone) — Next.js App Router
 - **Banco/Auth** — Supabase (Postgres + RLS)
-- **Sync do cartão Nubank** — Pluggy (Open Finance), com fallback de import CSV
+- **Entrada de dados** — manual, com import de CSV da fatura (idempotente)
 - **Custo de operação** — R$ 0 (free tiers)
 
 ## Documentação
 
-| Arquivo                          | Conteúdo                                                                     |
-| -------------------------------- | ---------------------------------------------------------------------------- |
-| [`docs/SPEC.md`](./docs/SPEC.md) | Requisitos, arquitetura, modelo de dados, integração Pluggy e plano de fases |
-| [`CLAUDE.md`](./CLAUDE.md)       | Contexto e convenções para desenvolvimento com Claude Code                   |
+| Arquivo                          | Conteúdo                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| [`docs/SPEC.md`](./docs/SPEC.md) | Requisitos, arquitetura, modelo de dados, import de CSV e plano de fases |
+| [`CLAUDE.md`](./CLAUDE.md)       | Contexto e convenções para desenvolvimento com Claude Code               |
 
 ## Estrutura
 
 ```
 apps/web        Next.js 16 (App Router), auth e UI
-  app/(dashboard)  telas autenticadas: resumo, lançamentos, orçamento, categorias
+  app/(dashboard)  telas autenticadas: resumo, tendências, lançamentos, orçamento,
+                   patrimônio e ajustes (categorias, regras, import)
   lib/db           acesso ao Postgres e conversão bigint↔centavos (server-only)
   lib/supabase     clients e tipos gerados do schema
-packages/shared Dinheiro (centavos/bigint), datas (YYYY-MM-DD) e regras de orçamento
+  public           manifest, ícones e service worker da PWA
+packages/shared Regras puras e testáveis: dinheiro (centavos/bigint), datas
+                (YYYY-MM-DD), orçamento, tendências, import CSV e patrimônio
 supabase        Migrations SQL, seed e config do stack local
 scripts         Utilitários de operação (provisionamento do usuário dono)
 ```
@@ -78,14 +81,12 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm format:check
 
 ### Variáveis de ambiente
 
-| Variável                                    | Escopo | Origem                                                       |
-| ------------------------------------------- | ------ | ------------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`                  | client | Supabase → Project Settings → API                            |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY`             | client | idem                                                         |
-| `SUPABASE_SERVICE_ROLE_KEY`                 | server | idem — **nunca** expor no client                             |
-| `OWNER_EMAIL`                               | server | o único e-mail que pode entrar no sistema                    |
-| `PLUGGY_CLIENT_ID` / `PLUGGY_CLIENT_SECRET` | server | dashboard Pluggy (Fase 3)                                    |
-| `CRON_SECRET`                               | server | gerar (`openssl rand -hex 32`) e replicar na Vercel (Fase 3) |
+| Variável                        | Escopo | Origem                                    |
+| ------------------------------- | ------ | ----------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | client | Supabase → Project Settings → API         |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client | idem                                      |
+| `SUPABASE_SERVICE_ROLE_KEY`     | server | idem — **nunca** expor no client          |
+| `OWNER_EMAIL`                   | server | o único e-mail que pode entrar no sistema |
 
 ## Auth single-user
 
@@ -117,7 +118,7 @@ Três camadas, todas necessárias:
 
 - [x] Fase 0 — Fundação (monorepo, Supabase, auth, CI)
 - [x] Fase 1 — MVP Gastos (transações, categorias, orçamentos, dashboard)
-- [ ] Fase 2 — Tendências + PWA
-- [ ] Fase 3 — Sync Nubank (Pluggy + CSV)
-- [ ] Fase 4 — Patrimônio
+- [x] Fase 2 — Tendências + PWA
+- [x] Fase 3 — Entrada em lote (import CSV, regras, fila "a categorizar")
+- [x] Fase 4 — Patrimônio (ativos, aportes, snapshots, evolução)
 - [ ] Fase 5 — Refinos

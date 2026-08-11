@@ -58,17 +58,23 @@ export async function saveMonthBudgets(month: IsoMonth, entries: BudgetEntry[]):
 /**
  * Copies every budget of `from` into `to`, leaving months that already have budgets of
  * their own untouched — recreating the same numbers every month is the common case.
+ *
+ * Both months are read through the client obtained here rather than through
+ * `listBudgetsForMonth`: each `authedClient()` verifies the session against the auth
+ * server, and Server Actions get no request-scoped memoization to fold those calls into
+ * one (unlike a render pass, where Next dedupes the identical fetch).
  */
 export async function copyBudgets(from: IsoMonth, to: IsoMonth): Promise<number> {
   const { supabase, userId } = await authedClient();
 
   const [source, existing] = await Promise.all([
-    listBudgetsForMonth(from),
-    listBudgetsForMonth(to),
+    supabase.from('budgets').select('*').eq('month', monthStart(from)),
+    supabase.from('budgets').select('category_id').eq('month', monthStart(to)),
   ]);
 
-  const alreadySet = new Set(existing.map((budget) => budget.categoryId));
-  const rows = source
+  const alreadySet = new Set(unwrap(existing).map((row) => row.category_id));
+  const rows = unwrap(source)
+    .map(toBudget)
     .filter((budget) => !alreadySet.has(budget.categoryId))
     .map((budget) => ({
       user_id: userId,

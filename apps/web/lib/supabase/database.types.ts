@@ -15,8 +15,6 @@ export type Database = {
           id: string
           institution: string | null
           name: string
-          pluggy_account_id: string | null
-          pluggy_item_id: string | null
           type: string
           updated_at: string
           user_id: string
@@ -26,8 +24,6 @@ export type Database = {
           id?: string
           institution?: string | null
           name: string
-          pluggy_account_id?: string | null
-          pluggy_item_id?: string | null
           type: string
           updated_at?: string
           user_id: string
@@ -37,8 +33,6 @@ export type Database = {
           id?: string
           institution?: string | null
           name?: string
-          pluggy_account_id?: string | null
-          pluggy_item_id?: string | null
           type?: string
           updated_at?: string
           user_id?: string
@@ -60,6 +54,130 @@ export type Database = {
           created_at?: string
           email?: string
           note?: string | null
+        }
+        Relationships: []
+      }
+      asset_events: {
+        Row: {
+          amount_cents: number
+          asset_id: string
+          created_at: string
+          date: string
+          id: string
+          notes: string | null
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount_cents: number
+          asset_id: string
+          created_at?: string
+          date: string
+          id?: string
+          notes?: string | null
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount_cents?: number
+          asset_id?: string
+          created_at?: string
+          date?: string
+          id?: string
+          notes?: string | null
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_events_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      asset_snapshots: {
+        Row: {
+          asset_id: string
+          created_at: string
+          date: string
+          gross_value_cents: number
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          asset_id: string
+          created_at?: string
+          date: string
+          gross_value_cents: number
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          asset_id?: string
+          created_at?: string
+          date?: string
+          gross_value_cents?: number
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_snapshots_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assets: {
+        Row: {
+          created_at: string
+          id: string
+          indexer: string | null
+          institution: string | null
+          is_closed: boolean
+          maturity_date: string | null
+          name: string
+          rate: number | null
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          indexer?: string | null
+          institution?: string | null
+          is_closed?: boolean
+          maturity_date?: string | null
+          name: string
+          rate?: number | null
+          type: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          indexer?: string | null
+          institution?: string | null
+          is_closed?: boolean
+          maturity_date?: string | null
+          name?: string
+          rate?: number | null
+          type?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }

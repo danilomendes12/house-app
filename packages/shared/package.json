@@ -9,7 +9,8 @@
     ".": "./index.ts",
     "./money": "./money.ts",
     "./date": "./date.ts",
-    "./budget": "./budget.ts"
+    "./budget": "./budget.ts",
+    "./trend": "./trend.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

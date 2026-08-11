@@ -15,9 +15,9 @@ Hoje não existe um lugar único e confiável para responder três perguntas rec
 
 1. **Visibilidade de gastos em < 10 segundos:** abrir o app e ver imediatamente o total do mês, o gasto por categoria e quanto resta do orçamento.
 2. **Entrada de despesa manual em < 15 segundos** pelo celular (PWA), incluindo categoria.
-3. **Sincronização automática do cartão Nubank** via Pluggy (Open Finance), com no máximo 1 dia de defasagem e zero duplicatas.
+3. **Lançamento em lote sem retrabalho:** importar o CSV da fatura do Nubank quantas vezes for preciso, sem gerar duplicatas, com categorização automática por regras.
 4. **Acompanhamento de patrimônio:** valor consolidado, rendimento por ativo e evolução histórica mensal.
-5. **Custo de operação: R$ 0/mês** (free tiers de Supabase, Vercel e Pluggy pessoal).
+5. **Custo de operação: R$ 0/mês** (free tiers de Supabase e Vercel).
 
 ## 3. Não-objetivos (v1)
 
@@ -25,8 +25,11 @@ Hoje não existe um lugar único e confiável para responder três perguntas rec
 - **Multiusuário / compartilhamento** — o sistema é single-user por design; simplifica auth, RLS e produto.
 - **Suporte a múltiplas moedas** — tudo em BRL.
 - **Recomendações financeiras / projeções de aposentadoria** — fora de escopo; o produto é de *registro e acompanhamento*.
-- **Conciliação bancária completa (conta corrente)** — o foco do sync automático é o **cartão de crédito** Nubank; conta corrente pode entrar depois.
-- **Open Finance com outros bancos** — a arquitetura via Pluggy já suporta, mas v1 conecta apenas Nubank.
+- **Integração com bancos (Open Finance / agregadores)** — decisão de 2026-08-02: a v1 é
+  alimentada por entrada manual + import de CSV. Sincronização automática exige conta em
+  agregador, credenciais server-side e um deploy com cron; nada disso existe hoje, e o
+  produto é plenamente utilizável sem. Fica como evolução futura (§11), e o schema já a
+  acomoda sem migration de dados (ver §6.1).
 
 ## 4. Usuário e histórias
 
@@ -36,20 +39,20 @@ Ordenadas por prioridade:
 
 1. Como dono, quero **registrar uma despesa pelo celular em segundos** para não depender de lembrar depois.
 2. Como dono, quero **ver o gasto do mês por categoria com o orçamento restante** para decidir se posso gastar mais.
-3. Como dono, quero que **as compras do meu cartão Nubank apareçam sozinhas e categorizadas** para não digitar nada que já existe digitalmente.
+3. Como dono, quero **importar a fatura do cartão de uma vez, já categorizada**, para não digitar nada que já existe digitalmente.
 4. Como dono, quero **comparar meses e ver tendências (3/6/12 meses)** para identificar categorias que estão crescendo.
 5. Como dono, quero **cadastrar meus investimentos e aportes** para saber quanto tenho e quanto cada ativo rendeu.
 6. Como dono, quero **ver a evolução do meu patrimônio mês a mês** em um gráfico.
-7. Como dono, quero **importar um CSV da fatura** quando o sync automático falhar, sem gerar duplicatas.
-8. Como dono, quero **recategorizar uma transação sincronizada** e, opcionalmente, criar uma regra para as próximas.
+7. Como dono, quero **reimportar um CSV sem medo**, sabendo que nada será duplicado.
+8. Como dono, quero **recategorizar uma transação importada** e, opcionalmente, criar uma regra para as próximas.
 
 ## 5. Arquitetura
 
 ### 5.1 Decisão (formato ADR resumido)
 
-**Contexto:** projeto pessoal, single-user, custo zero, um desenvolvedor usando Claude Code. Precisa de web desktop + uso mobile, banco relacional, jobs de sincronização e segredos server-side (credenciais Pluggy nunca podem ir ao client).
+**Contexto:** projeto pessoal, single-user, custo zero, um desenvolvedor usando Claude Code. Precisa de web desktop + uso mobile, banco relacional e um lugar seguro para rodar o que não pode ir ao client (import de arquivos, chave de service role).
 
-**Decisão:** monorepo TypeScript com **Next.js (App Router) como PWA na Vercel** + **Supabase** (Postgres, Auth, RLS). Sem backend separado: o que precisa de servidor (Pluggy, import CSV) vive em **Route Handlers do Next.js**, com **Vercel Cron** para o sync diário.
+**Decisão:** monorepo TypeScript com **Next.js (App Router) como PWA** + **Supabase** (Postgres, Auth, RLS). Sem backend separado: o que precisa de servidor vive em **Server Actions** e, quando for um endpoint de verdade, em Route Handlers.
 
 **Alternativas consideradas:**
 
@@ -57,32 +60,29 @@ Ordenadas por prioridade:
 |---|---|---|---|
 | Next.js PWA + Supabase (escolhida) | 1 deploy, 1 linguagem, RLS pronto, custo zero | Lógica server acoplada ao app web | ✅ |
 | API separada (Fastify) + web + iOS | Separação limpa, pronto p/ múltiplos clients | 2 deploys, overhead injustificado p/ 1 usuário | ❌ por ora |
-| Supabase Edge Functions p/ sync | Independente da Vercel | Deno, DX pior, mais um lugar p/ deploy | ❌ (revisitar se sair da Vercel) |
+| SPA + Supabase direto, sem servidor | Nada de servidor para manter | Sem lugar para segredo nem para parse de arquivo | ❌ |
 
-**Consequências:** fica fácil evoluir para app iOS depois (o iOS falaria direto com Supabase + endpoints do Next). Fica mais difícil trocar de Vercel sem levar os Route Handlers junto — aceitável.
+**Consequências:** fica fácil evoluir para app iOS depois (o iOS falaria direto com Supabase + endpoints do Next). O app roda inteiro em `localhost` durante o desenvolvimento; nada no produto depende de estar publicado.
 
 ### 5.2 Estrutura do monorepo
 
 ```
 finance/
 ├── apps/
-│   └── web/                    # Next.js 15+ (App Router), PWA
+│   └── web/                    # Next.js 16 (App Router), PWA
 │       ├── app/
-│       │   ├── (dashboard)/    # rotas autenticadas: gastos, patrimônio, config
-│       │   ├── api/
-│       │   │   ├── pluggy/     # connect-token, sync, webhook (opcional)
-│       │   │   ├── import/     # upload e parse de CSV
-│       │   │   └── cron/sync/  # alvo do Vercel Cron (protegido por CRON_SECRET)
+│       │   ├── (dashboard)/    # rotas autenticadas: gastos, tendências, patrimônio, ajustes
 │       │   └── login/
 │       ├── components/
-│       ├── lib/                # clients supabase (browser/server), pluggy client
-│       └── public/manifest.webmanifest
+│       ├── lib/                # clients supabase (browser/server), acesso a dados
+│       └── public/             # manifest.webmanifest, ícones, service worker
 ├── packages/
-│   └── shared/                 # tipos TS, enums de categoria, helpers de dinheiro/datas
+│   └── shared/                 # tipos TS e regras puras: dinheiro, datas, orçamento,
+│                               # tendências, import CSV, categorização, patrimônio
 ├── supabase/
 │   ├── migrations/             # SQL versionado (fonte da verdade do schema)
-│   └── seed.sql                # categorias padrão
-├── SPEC.md                     # este documento
+│   └── seed.sql                # dados de bootstrap
+├── docs/SPEC.md                # este documento
 ├── CLAUDE.md
 └── README.md
 ```
@@ -95,17 +95,15 @@ finance/
 | UI | Tailwind CSS + shadcn/ui | rápido e consistente |
 | Gráficos | Recharts | linha, barra, donut cobrem tudo do escopo |
 | Banco/Auth | Supabase (Postgres + Auth + RLS) | free tier |
-| Deploy | Vercel (Hobby) | inclui Vercel Cron (1 job diário é suficiente) |
-| Open Finance | Pluggy | plano pessoal gratuito; SDK `pluggy-sdk` (Node) |
-| PWA | `manifest.webmanifest` + service worker (Serwist/next-pwa) | instalável no iPhone via "Adicionar à Tela de Início" |
-| Tooling | pnpm workspaces, Turborepo (opcional), ESLint, Prettier, Vitest | |
+| Deploy | Vercel (Hobby), quando houver | o app não depende disso; roda inteiro em localhost |
+| PWA | `manifest.webmanifest` + service worker escrito à mão | instalável no iPhone via "Adicionar à Tela de Início"; sem dependência extra |
+| Tooling | pnpm workspaces, ESLint, Prettier, Vitest | |
 
 ### 5.4 Segurança (single-user)
 
 - **Signups desabilitados** no Supabase Auth; login apenas com o e-mail do dono (magic link ou senha). Defesa em profundidade: trigger que rejeita `INSERT` em `auth.users` para e-mails fora da allowlist.
 - **RLS habilitado em todas as tabelas**, política `user_id = auth.uid()` — mesmo sendo single-user.
-- **Segredos apenas server-side:** `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET` vivem em env vars da Vercel e nunca são expostos com prefixo `NEXT_PUBLIC_`.
-- Rota de cron exige header `Authorization: Bearer ${CRON_SECRET}`.
+- **Segredos apenas server-side:** `SUPABASE_SERVICE_ROLE_KEY` e `OWNER_EMAIL` nunca recebem o prefixo `NEXT_PUBLIC_` nem são importados de client component.
 
 ## 6. Modelo de dados
 
@@ -116,11 +114,9 @@ Convenções: valores monetários em **centavos** (`bigint`), datas de transaç�
 ```sql
 -- Contas (origem das transações)
 accounts (
-  name            text not null,            -- "Nubank Cartão", "Dinheiro"
-  type            text not null,            -- 'credit_card' | 'checking' | 'cash'
-  institution     text,
-  pluggy_item_id  text,                     -- item conectado no Pluggy
-  pluggy_account_id text unique             -- conta específica dentro do item
+  name        text not null,                -- "Nubank Cartão", "Dinheiro"
+  type        text not null,                -- 'credit_card' | 'checking' | 'cash'
+  institution text
 )
 
 -- Categorias (flat; sem subcategorias na v1)
@@ -140,8 +136,8 @@ transactions (
   description     text not null,
   amount_cents    bigint not null check (amount_cents > 0),
   type            text not null,                -- 'expense' | 'income'
-  source          text not null,                -- 'manual' | 'pluggy' | 'csv'
-  external_id     text unique,                  -- id Pluggy ou hash do CSV (dedup)
+  source          text not null,                -- 'manual' | 'csv'
+  external_id     text unique,                  -- hash da linha do CSV (dedup, §7)
   installment_num   int,                        -- parcela atual (nullable)
   installment_total int,                        -- total de parcelas (nullable)
   notes           text
@@ -165,8 +161,8 @@ category_rules (
 
 **Regras de negócio de gastos:**
 
-- **Regime de competência:** despesa de cartão conta no mês da **data da compra** (parcelas: cada parcela na data da respectiva fatura, conforme retornado pelo Pluggy).
-- **Pagamento de fatura não é despesa** (é transferência interna) — filtrado no sync para não duplicar.
+- **Regime de competência:** despesa de cartão conta no mês da **data da compra** (parcelas: cada parcela na data da respectiva fatura).
+- **Pagamento de fatura não é despesa** (é transferência interna) — descartado no import para não duplicar.
 - Estorno/refund vira transação `type = 'income'` na mesma categoria.
 - "Restante do orçamento" = `budgets.amount_cents − Σ despesas da categoria no mês`. Categoria sem orçamento aparece sem barra de progresso.
 
@@ -181,7 +177,6 @@ assets (
   indexer       text,                       -- 'cdi'|'ipca'|'prefixado'|'selic'|null
   rate          numeric,                    -- ex.: 110 (% do CDI) ou 6.5 (a.a.)
   maturity_date date,
-  pluggy_investment_id text unique,         -- se sincronizado via Pluggy
   is_closed     boolean default false
 )
 
@@ -193,7 +188,7 @@ asset_events (
   amount_cents bigint not null check (amount_cents > 0)
 )
 
--- Snapshots de valor (manual ou via Pluggy)
+-- Snapshots de valor (informados manualmente)
 asset_snapshots (
   asset_id          uuid references assets,
   date              date not null,
@@ -207,27 +202,43 @@ asset_snapshots (
 - **Valor investido** de um ativo = Σ aportes − Σ resgates.
 - **Rendimento** = último snapshot − valor investido (absoluto e %).
 - **Patrimônio total** em uma data = Σ do snapshot mais recente ≤ data, por ativo aberto.
-- Ativos sem integração recebem **snapshot manual** (tela simples: "atualizar valor atual"); ativos via Pluggy recebem snapshot no sync diário.
-- Evolução mensal = série dos snapshots agregados por mês (último snapshot de cada mês).
+- Todo ativo recebe **snapshot manual** (tela simples: "atualizar valor atual").
+- Evolução mensal = série dos snapshots agregados por mês (último snapshot de cada mês, por ativo). Um mês sem snapshot novo herda o último valor conhecido do ativo — senão o patrimônio total pareceria despencar em todo mês sem atualização.
 
-## 7. Integração Pluggy (Nubank)
+## 7. Import de CSV da fatura
 
-**Fluxo de conexão (uma vez):**
-1. Web chama `POST /api/pluggy/connect-token` (server-side, usa client id/secret) → recebe `connectToken`.
-2. Front abre o **Pluggy Connect** (widget) com o token; usuário autentica no Nubank via Open Finance.
-3. Callback retorna `itemId` → salvo em `accounts.pluggy_item_id`; contas do item (cartão) viram registros em `accounts`.
+Entrada em lote sem integração: o app do Nubank exporta a fatura como CSV, e o arquivo é
+enviado na tela **Ajustes → Importar CSV**. O parse roda em Server Action (server-only) e
+devolve uma prévia antes de gravar qualquer coisa.
 
-**Sync (diário, via Vercel Cron → `/api/cron/sync`):**
-1. Para cada `account` com `pluggy_account_id`: buscar transações desde `último sync − 7 dias` (janela de segurança para transações retroativas).
-2. **Dedup por `external_id`** (id da transação no Pluggy) — `insert ... on conflict do nothing`, com update de categoria Pluggy se a transação ainda estiver "a categorizar".
-3. **Filtros:** ignorar pagamento de fatura; mapear estornos para `income`.
-4. **Categorização:** aplicar `category_rules` (prioridade desc) → senão, mapear categoria do Pluggy via tabela de-para em `packages/shared` → senão, deixar "a categorizar" (badge no dashboard).
-5. Buscar `investments` do item (se houver) e gravar `asset_snapshots` do dia.
-6. Registrar resultado em uma tabela `sync_logs` (started_at, finished_at, inserted, errors) para debug.
+**Formato aceito.** Cabeçalho `date,title,amount` (o do Nubank) e as variações em pt-BR
+(`data,título,valor`). Datas em `YYYY-MM-DD` ou `DD/MM/YYYY`; valores com vírgula ou ponto
+decimal, parseados por `parseCents` — nunca por `parseFloat`.
 
-**Fallback CSV:** upload da fatura exportada pelo app Nubank (`date, title, amount`) em `/api/import`. `external_id = sha256(date|title|amount|nº da linha repetida)` para dedup idempotente — reimportar o mesmo arquivo não duplica nada.
+**Sinal do valor.** No CSV da fatura, valor positivo é despesa e negativo é estorno/crédito.
+O import inverte isso para o modelo do §6.1: `amount_cents` sempre positivo, com a direção
+em `type` (`expense` / `income`).
 
-**Riscos conhecidos:** consentimento Open Finance expira periodicamente (~12 meses) e exige reconexão; plano gratuito do Pluggy pode ter limites de itens/chamadas — validar termos vigentes na Fase 3 (questão em aberto Q1). O fallback CSV garante que o produto nunca fica inutilizável.
+**Descarte de pagamento de fatura.** Linhas cujo título casa com o padrão de pagamento
+(`Pagamento recebido`, `Pagamento em ...`) não viram transação: são transferência interna,
+e lançá-las duplicaria o mês inteiro (§6.1).
+
+**Parcelas.** Títulos no formato `Loja - Parcela 3/10` viram `installment_num = 3`,
+`installment_total = 10`, com o sufixo removido da descrição. Uma transação por parcela,
+na data da fatura em que ela cai.
+
+**Dedup idempotente.** Cada linha recebe uma chave estável
+`external_id = sha256("<date>|<title normalizado>|<amount>|<ocorrência>")`, onde *ocorrência*
+é o índice (0, 1, 2…) daquela linha entre as **idênticas do mesmo arquivo**. Isso preserva
+duas compras iguais legítimas no mesmo dia e ainda assim torna a reimportação um no-op:
+a gravação usa `on conflict (user_id, external_id) do nothing`. O hash é calculado no
+servidor (`node:crypto`); `packages/shared` só produz a string a ser hasheada, para
+continuar livre de dependências de runtime.
+
+**Categorização automática.** Cada linha importada passa pelas `category_rules` (§6.1),
+ordenadas por `priority desc`: a primeira cujo `matcher` for substring case-insensitive da
+descrição define a categoria. Sem regra que case, a transação entra como "a categorizar" e
+aparece na fila (§9).
 
 ## 8. Requisitos por prioridade
 
@@ -239,20 +250,18 @@ asset_snapshots (
 - [x] Orçamento por categoria com "quanto resta" (barra de progresso) — Fase 1, critérios do §9 validados no stack local
 
 ### P1 — o produto fica bom
-- [ ] Gráficos de tendência (linha, 3/6/12 meses) por categoria e total
-- [ ] Comparação mês vs. mês anterior (variação % por categoria)
-- [ ] PWA instalável (manifest, ícones, service worker) com tela de entrada rápida de despesa
-- [ ] Sync Pluggy (conexão + cron diário + dedup + filtro de pagamento de fatura)
-- [ ] Import CSV idempotente
-- [ ] Regras de categorização + fila "a categorizar"
-- [ ] Patrimônio: CRUD de ativos, aportes/resgates, snapshots manuais, rendimento por ativo, gráfico de evolução total
+- [x] Gráficos de tendência (linha, 3/6/12 meses) por categoria e total — Fase 2
+- [x] Comparação mês vs. mês anterior (variação % por categoria) — Fase 2
+- [x] PWA instalável (manifest, ícones, service worker) com tela de entrada rápida de despesa — Fase 2
+- [x] Import CSV idempotente — Fase 3, critérios do §9 validados no stack local
+- [x] Regras de categorização + fila "a categorizar" — Fase 3
+- [x] Patrimônio: CRUD de ativos, aportes/resgates, snapshots manuais, rendimento por ativo, gráfico de evolução total — Fase 4, critério do §9 validado no stack local
 
 ### P2 — futuro (guiar arquitetura, não construir agora)
 - [ ] App iOS nativo (SwiftUI) consumindo Supabase + endpoints existentes; widget de entrada rápida
-- [ ] Snapshots de investimentos via Pluggy (se o plano gratuito cobrir)
-- [ ] Conta corrente Nubank e outros bancos
+- [ ] Integração Open Finance (agregador tipo Pluggy): sync de cartão e snapshots de investimento, com cron diário. Removida da v1 em 2026-08-02 (§3); o `external_id` único e a coluna `source` já acomodam uma segunda origem de dados sem migration de dados
 - [ ] Exportação de dados (CSV/JSON) e backup automático
-- [ ] Notificações (orçamento estourando, sync falhou)
+- [ ] Notificações (orçamento estourando)
 
 ## 9. Critérios de aceite dos fluxos principais
 
@@ -262,36 +271,41 @@ asset_snapshots (
 **Orçamento:**
 - Dado um orçamento de R$ 800 em "Mercado" e R$ 600 gastos, quando abro o dashboard, então vejo "R$ 200 restantes" e barra em 75%; ao ultrapassar 100%, a barra muda de cor e mostra o excedente.
 
-**Sync sem duplicatas:**
-- Dado que o cron rodou duas vezes no mesmo dia, então nenhuma transação aparece duplicada (garantido por `external_id unique`).
-- Dado um pagamento de fatura no extrato do cartão, então ele **não** aparece como despesa.
-
 **Import CSV idempotente:**
 - Dado que importei o mesmo arquivo duas vezes, então a segunda importação insere 0 registros e informa "N ignorados (já existentes)".
+- Dado um arquivo com duas linhas idênticas legítimas (mesma compra, mesmo dia), então ambas são importadas — e reimportar o arquivo continua inserindo 0.
+- Dado um pagamento de fatura no arquivo, então ele **não** aparece como despesa.
+
+**Fila "a categorizar":**
+- Dado um lançamento sem categoria, quando escolho a categoria na fila, então ele sai da fila sem recarregar a tela inteira; marcando "criar regra", os próximos títulos parecidos entram já categorizados.
+
+**Tendências:**
+- Dado 6 meses de histórico, quando abro Tendências, então vejo a linha do total por mês e a variação % de cada categoria contra o mês anterior, com as maiores altas primeiro.
 
 **Patrimônio:**
 - Dado um ativo com aportes de R$ 10.000 e snapshot atual de R$ 10.480, então a tela mostra rendimento de R$ 480 (+4,8%).
 
 ## 10. Plano de desenvolvimento por fases
 
-Cada fase termina com deploy funcional. Uma fase por sessão de trabalho com o Claude Code, idealmente.
+Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fase por sessão de trabalho com o Claude Code, idealmente.
 
 | Fase | Entrega | Conteúdo |
 |---|---|---|
-| **0 — Fundação** | Repo + deploy "hello world" autenticado | Monorepo pnpm, Next.js, Supabase (projeto, auth single-user, migrations iniciais), CI mínima (typecheck + test), deploy Vercel |
+| **0 — Fundação** | Repo + "hello world" autenticado | Monorepo pnpm, Next.js, Supabase (projeto, auth single-user, migrations iniciais), CI mínima (typecheck + test) |
 | **1 — MVP Gastos** | Uso diário já possível | Schema de gastos (§6.1), CRUD transações/categorias, dashboard mensal, orçamentos com restante, seed de categorias |
 | **2 — Tendências + PWA** | Análise + mobile de verdade | Gráficos de tendência e comparação entre meses, manifest + service worker, UI mobile-first de entrada rápida |
-| **3 — Sync Nubank** | Fim da digitação | Conexão Pluggy, cron diário, dedup, filtros, regras de categorização, fila "a categorizar", import CSV fallback, `sync_logs` |
-| **4 — Patrimônio** | Visão completa | Schema §6.2, CRUD ativos/eventos/snapshots, rendimento, gráfico de evolução, (se viável) snapshots via Pluggy |
+| **3 — Entrada em lote** | Fim da digitação | Import CSV idempotente (§7), regras de categorização, fila "a categorizar" |
+| **4 — Patrimônio** | Visão completa | Schema §6.2, CRUD ativos/eventos/snapshots, rendimento, gráfico de evolução |
 | **5 — Refinos** | Qualidade de vida | Exportação de dados, notificações de orçamento, melhorias de UX apontadas pelo uso real |
 
 ## 11. Questões em aberto
 
 | # | Questão | Quem responde | Bloqueia |
 |---|---|---|---|
-| Q1 | Termos vigentes do plano gratuito Pluggy: limites de itens, chamadas e acesso a `investments`? | Você (verificar no dashboard Pluggy ao criar a conta) | Fase 3 |
-| Q2 | Renda (salário) entra no sistema para calcular "sobra do mês", ou o produto trata só despesas + orçamento? | Você | Não bloqueia (schema já suporta `type='income'`) |
+| ~~Q1~~ | ~~Termos do plano gratuito Pluggy~~ | — | Resolvida em 2026-08-02: integração saiu da v1 (§3) |
+| ~~Q2~~ | ~~Renda entra no sistema para calcular "sobra do mês"?~~ | — | Resolvida em 2026-08-02: tendências cobrem só despesas (§12) |
 | Q3 | Quando migrar PWA → iOS nativo? Sugestão: só se a fricção da PWA incomodar após 1 mês de uso real | Você | Não bloqueia |
+| Q4 | Vale conectar transações a `accounts` (Nubank Cartão, Dinheiro) na UI, ou `account_id` continua sempre nulo? | Você | Não bloqueia (tabela existe, ninguém escreve nela) |
 
 ## 12. Decisões assumidas (mude se discordar)
 
@@ -312,3 +326,43 @@ Cada fase termina com deploy funcional. Uma fase por sessão de trabalho com o C
 - **Orçamento é por mês, sem herança automática:** um mês sem orçamento cadastrado não
   herda o anterior (a categoria aparece sem barra). A tela de orçamento tem um botão de
   "copiar do mês anterior" para o caso comum de repetir os mesmos valores.
+- **Tendências cobrem só despesas** (Fase 2, resposta ao Q2): os gráficos e a comparação
+  mês a mês olham gasto por categoria e total de despesas. Receita continua na seção
+  separada do dashboard; não há indicador de "sobra do mês" na v1. O schema suporta
+  `type='income'`, então incluir renda depois é trabalho de UI, não de dados.
+- **Mutações são Server Actions**, não Route Handlers — inclusive o upload do CSV. É o
+  mecanismo que o resto do app já usa (`useActionState` + `SubmitButton`), e não há
+  cliente externo que precise de um endpoint HTTP. Route Handler volta a fazer sentido
+  quando algo de fora do app precisar chamar (webhook, cron, app iOS).
+- **Snapshot de patrimônio é por dia** (`unique (asset_id, date)`): atualizar o valor de um
+  ativo duas vezes no mesmo dia sobrescreve, em vez de criar duas linhas. A evolução
+  mensal usa o último snapshot de cada mês.
+- **Ajustes fica no header, não na tab bar** (Fase 3): as 5 abas são os fluxos diários e a
+  zona do polegar vale mais que um sexto ícone. `/settings` reúne Importar CSV, A
+  categorizar, Regras e Categorias — esta última era uma página órfã, sem link de lugar
+  nenhum.
+- **A tab bar tem só substantivos; lançar é o FAB** (Fase 5): a aba de `/transactions` se
+  chama **Extrato**, não "Lançar" — ela leva à lista do mês, e um rótulo em verbo prometia
+  um formulário. As cinco abas nomeiam *lugares* (Resumo, Tendências, Extrato, Orçamento,
+  Patrimônio); a única *ação* de rotina, registrar despesa, continua no botão "+" flutuante
+  do Resumo, que é o que o §9 exige (1 toque).
+- **Regra criada pela fila é aplicada ao backlog** (Fase 3): salvar "uber → Transporte"
+  categoriza na hora os lançamentos que já estavam esperando (`applyMatcherToUncategorized`),
+  não só os próximos imports. Uma regra que só vale para o futuro deixaria o usuário
+  categorizando à mão justamente a pilha que o motivou a escrevê-la.
+- **Ativo encerrado sai do total, não da história** (Fase 4): `monthlyNetWorthSeries`
+  arrasta o último valor conhecido de cada ativo para frente — senão o patrimônio
+  despencaria em todo mês sem atualização (§6.2) —, mas para de arrastar um ativo
+  `is_closed` depois do último snapshot dele, senão dinheiro já resgatado seguiria contando
+  hoje. Antes do primeiro snapshot o ativo contribui 0.
+- **Ativo sem snapshot entra no total pelo valor aportado** (Fase 4): o total do topo soma o
+  valor *atual* de cada ativo aberto, que na ausência de snapshot é o que foi aportado
+  (`assetPerformance`). O §6.2 define o total só a partir de snapshots; ao pé da letra, um
+  ativo recém-cadastrado apareceria como R$ 0 logo acima de uma lista que mostra o saldo
+  real dele. O gráfico continua sendo só de snapshots, então o último ponto pode ficar
+  abaixo do total — a tela diz isso em uma linha quando há ativos nessa situação.
+- **Gráfico de patrimônio é linha simples** (Fase 4): a decisão de virar small multiples na
+  Fase 2 valia para o gasto *por categoria*, onde a paleta semeada falhava separação para
+  daltonismo (laranja↔verde, ΔE 4,8). Patrimônio é série única, então não há cor
+  codificando nada e a linha volta a ser a forma certa. As duas telas usam o mesmo
+  componente (`components/month-line-chart.tsx`).

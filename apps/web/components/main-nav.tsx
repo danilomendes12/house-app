@@ -2,18 +2,20 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutGrid, ListPlus, Tags, Target } from 'lucide-react';
+import { LayoutGrid, Receipt, Target, TrendingUp, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 const items: {
-  href: '/' | '/transactions' | '/budgets' | '/categories';
+  href: '/' | '/trends' | '/transactions' | '/budgets' | '/assets';
   label: string;
   icon: LucideIcon;
 }[] = [
   { href: '/', label: 'Resumo', icon: LayoutGrid },
-  { href: '/transactions', label: 'Lançamentos', icon: ListPlus },
+  { href: '/trends', label: 'Tendências', icon: TrendingUp },
+  // "Extrato", not "Lançar": the tab leads to the month's list. Entry is the FAB.
+  { href: '/transactions', label: 'Extrato', icon: Receipt },
   { href: '/budgets', label: 'Orçamento', icon: Target },
-  { href: '/categories', label: 'Categorias', icon: Tags },
+  { href: '/assets', label: 'Patrimônio', icon: Wallet },
 ];
 
 /**

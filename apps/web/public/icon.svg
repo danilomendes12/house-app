@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Finanças">
+  <!--
+    App mark: three ascending columns on the brand purple (#6b5ad4 = oklch(0.55 0.18 285),
+    the same brand colour the UI uses).
+
+    The glyph sits inside the central 60% of the canvas, well within the 80% safe zone a
+    maskable icon needs, so Android's circle mask and iOS's squircle both crop only
+    background. scripts/build-icons.mjs rasterizes this file into public/icons/.
+  -->
+  <rect width="512" height="512" fill="#6b5ad4" />
+  <g fill="#ffffff">
+    <rect x="140" y="290" width="54" height="92" rx="16" />
+    <rect x="229" y="232" width="54" height="150" rx="16" />
+    <rect x="318" y="150" width="54" height="232" rx="16" />
+  </g>
+</svg>

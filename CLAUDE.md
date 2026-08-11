@@ -4,13 +4,13 @@ Contexto operacional para o Claude Code. A fonte da verdade de produto e arquite
 
 ## O que é este projeto
 
-App pessoal (single-user) de finanças: controle de gastos mensais com orçamento por categoria + acompanhamento de patrimônio/investimentos. Web desktop + PWA mobile. Sync do cartão Nubank via Pluggy (Open Finance). Dono: engenheiro de software sênior — pode assumir familiaridade com TypeScript, SQL e trade-offs de arquitetura; explique decisões, não conceitos básicos.
+App pessoal (single-user) de finanças: controle de gastos mensais com orçamento por categoria + acompanhamento de patrimônio/investimentos. Web desktop + PWA mobile. Entrada de dados é manual, com import de CSV da fatura para lançamento em lote. Dono: engenheiro de software sênior — pode assumir familiaridade com TypeScript, SQL e trade-offs de arquitetura; explique decisões, não conceitos básicos.
 
 ## Stack e estrutura
 
 - **Monorepo pnpm**: `apps/web` (Next.js App Router, TypeScript strict, Tailwind + shadcn/ui, Recharts), `packages/shared` (tipos e helpers), `supabase/` (migrations SQL + seed).
-- **Supabase**: Postgres + Auth + RLS. **Vercel**: deploy + Cron diário de sync.
-- Server-only code (Pluggy, import CSV, cron) vive em Route Handlers de `apps/web/app/api/`.
+- **Supabase**: Postgres + Auth + RLS.
+- Toda mutação passa por **Server Action**; `lib/db/*` (marcado `server-only`) é a única porta de entrada no Postgres.
 
 ## Comandos
 
@@ -34,15 +34,15 @@ Antes de considerar qualquer tarefa concluída: `pnpm typecheck && pnpm lint && 
 2. **Datas de transação são `date`** (sem hora). Timezone de referência: `America/Sao_Paulo`. Cuidado com off-by-one ao converter — nunca use `new Date('2026-08-01')` para datas de negócio; trate como string `YYYY-MM-DD` ou use helper de `shared`.
 3. **RLS em toda tabela nova**, política `user_id = auth.uid()`, sem exceção — mesmo sendo single-user.
 4. **Schema muda só via migration** em `supabase/migrations/` (SQL). Nunca altere o banco pelo dashboard.
-5. **Segredos nunca no client.** `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET` são server-only. Só chaves com prefixo `NEXT_PUBLIC_` podem aparecer em código de browser. Ao criar env var nova, adicione em `.env.example` (sem valor).
-6. **Idempotência no sync/import:** toda transação externa tem `external_id` único; inserções usam `on conflict do nothing`. Rodar duas vezes nunca pode duplicar dados.
+5. **Segredos nunca no client.** `SUPABASE_SERVICE_ROLE_KEY` e `OWNER_EMAIL` são server-only. Só chaves com prefixo `NEXT_PUBLIC_` podem aparecer em código de browser. Ao criar env var nova, adicione em `.env.example` (sem valor).
+6. **Idempotência no import:** toda transação importada tem `external_id` único; inserções usam `on conflict do nothing`. Importar o mesmo arquivo duas vezes nunca pode duplicar dados.
 7. **UI em pt-BR**; código, identificadores, commits e comentários em inglês. Commits: conventional commits (`feat:`, `fix:`, `chore:`...).
 8. **Mobile-first** nas telas de gastos — o caso de uso nº 1 é registrar despesa pelo iPhone via PWA.
 
 ## Regras de negócio que sempre confundem (resumo do SPEC §6)
 
 - Despesa de cartão conta na **data da compra** (competência); parcela conta na data da fatura em que cai — uma transação por parcela.
-- **Pagamento de fatura não é despesa** — filtrar no sync.
+- **Pagamento de fatura não é despesa** — descartar na importação.
 - Estorno = transação `type='income'` na mesma categoria.
 - Rendimento de ativo = último snapshot − (Σ aportes − Σ resgates).
 
@@ -57,6 +57,9 @@ Antes de considerar qualquer tarefa concluída: `pnpm typecheck && pnpm lint && 
 ## Armadilhas conhecidas
 
 - Supabase local exige Docker rodando; se `supabase start` falhar, verifique isso primeiro.
-- O widget Pluggy Connect roda no client, mas o `connectToken` **deve** ser gerado server-side (`/api/pluggy/connect-token`).
-- Rota de cron (`/api/cron/sync`) valida `Authorization: Bearer ${CRON_SECRET}`; sem isso ela deve retornar 401.
-- CSV do Nubank pode ter linhas idênticas legítimas (duas compras iguais no mesmo dia) — o hash de dedup inclui um índice de ocorrência (ver SPEC §7).
+- CSV do Nubank pode ter linhas idênticas legítimas (duas compras iguais no mesmo dia) — a chave de dedup inclui um índice de ocorrência (ver SPEC §7).
+- `packages/shared` é importado por client components: nada de `node:*` ali. Hashing e I/O ficam em `apps/web/lib/`.
+- Depois de criar migration, regenere `apps/web/lib/supabase/database.types.ts` (comando no README) — o typecheck quebra sem isso.
+- Mudar `lib/import/external-id.ts` quebra a idempotência em silêncio: todo `external_id` já gravado passa a ser outro, e o próximo import duplica tudo.
+- `bigint` não atravessa a fronteira server→client. Formate no servidor (`formatCents`) e passe string para o client component.
+- `exactOptionalPropertyTypes` está ligado: render props do Recharts (`dot`, por exemplo) não aceitam um tipo de props mais estreito que o da lib — tipe pelo Recharts e estreite dentro do corpo.

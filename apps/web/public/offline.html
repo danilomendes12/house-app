@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Sem conexão · Finanças</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --surface: #fff;
+        --ink: #2c2c3a;
+        --ink-muted: #6b6b80;
+        --brand: #6b5ad4;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #1c1c25;
+          --ink: #f2f2f6;
+          --ink-muted: #a5a5b8;
+          --brand: #a495f0;
+        }
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+        background: var(--surface);
+        color: var(--ink);
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          'Helvetica Neue',
+          Arial,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-align: center;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        margin: 0 0 1.5rem;
+        font-size: 0.875rem;
+        color: var(--ink-muted);
+      }
+      button {
+        height: 3rem;
+        padding: 0 1.25rem;
+        border: 0;
+        border-radius: 0.75rem;
+        background: var(--brand);
+        color: #fff;
+        font: inherit;
+        font-weight: 500;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Offline fallback for navigations. Deliberately standalone: no data, no session, no
+      build assets — it is the one page the service worker may serve from cache, so it must
+      never contain anything user-specific.
+    -->
+    <main>
+      <h1>Sem conexão</h1>
+      <p>Seus lançamentos precisam de internet para carregar. Tente de novo em instantes.</p>
+      <button type="button" onclick="location.reload()">Tentar de novo</button>
+    </main>
+  </body>
+</html>

@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { LogOut } from 'lucide-react';
+import { LogOut, Settings } from 'lucide-react';
 import { MainNav } from '@/components/main-nav';
 import { getUser } from '@/lib/supabase/server';
 import { signOut } from './actions';
@@ -16,6 +17,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <span className="hidden text-sm text-[var(--color-ink-muted)] sm:inline">
             {user.email}
           </span>
+          {/* Settings lives in the header, not the tab bar: the five tabs are the daily
+              flows, and the thumb zone is worth more than a sixth icon. */}
+          <Link
+            href="/settings"
+            aria-label="Ajustes"
+            title="Ajustes"
+            className="grid size-10 place-items-center rounded-full border border-[var(--color-line)] bg-[var(--color-surface)]"
+          >
+            <Settings aria-hidden className="size-4" />
+          </Link>
           <form action={signOut}>
             <button
               type="submit"

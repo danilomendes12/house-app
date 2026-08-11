@@ -8,7 +8,7 @@ import { listTransactionsForMonth } from '@/lib/db/transactions';
 import { resolveMonth } from '@/lib/month-param';
 import { TransactionList } from './transaction-list';
 
-export const metadata = { title: 'Lançamentos · Finanças' };
+export const metadata = { title: 'Extrato · Finanças' };
 
 export default async function TransactionsPage({
   searchParams,
