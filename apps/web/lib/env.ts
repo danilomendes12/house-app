@@ -1,9 +1,13 @@
 /**
  * Environment access.
  *
- * `NEXT_PUBLIC_*` vars are referenced literally so Next can inline them at build time.
- * Server-only secrets live in {@link serverEnv} and must never be imported from a
- * client component — read them in Route Handlers, Server Actions or Server Components.
+ * Everything here is server-only and read through a getter, so it resolves at **runtime**,
+ * not at build time: the same Docker image runs on any VM, configured only by its `.env`.
+ * There is no `NEXT_PUBLIC_*` var left — the browser never talks to Supabase directly
+ * (every read and write goes through a Server Component, Server Action or Route Handler),
+ * which is also why the Supabase API needs no public port in the self-hosted stack.
+ *
+ * Never import this from a client component.
  */
 
 function required(name: string, value: string | undefined): string {
@@ -15,16 +19,16 @@ function required(name: string, value: string | undefined): string {
   return value;
 }
 
-export const publicEnv = {
-  supabaseUrl: required('NEXT_PUBLIC_SUPABASE_URL', process.env.NEXT_PUBLIC_SUPABASE_URL),
-  supabaseAnonKey: required(
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-  ),
-};
-
 export const serverEnv = {
-  /** The single e-mail allowed to sign in. Also enforced in the database (see migrations). */
+  /** Base URL of the Supabase API (GoTrue + PostgREST). Internal to the network in production. */
+  get supabaseUrl(): string {
+    return required('SUPABASE_URL', process.env.SUPABASE_URL);
+  },
+  /** Anon key. The client runs as the logged-in user, so RLS is what actually authorizes. */
+  get supabaseAnonKey(): string {
+    return required('SUPABASE_ANON_KEY', process.env.SUPABASE_ANON_KEY);
+  },
+  /** The e-mail of the household owner. Also enforced in the database (see migrations). */
   get ownerEmail(): string {
     return required('OWNER_EMAIL', process.env.OWNER_EMAIL);
   },

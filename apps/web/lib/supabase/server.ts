@@ -3,7 +3,7 @@ import 'server-only';
 import { cache } from 'react';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
-import { publicEnv } from '@/lib/env';
+import { serverEnv } from '@/lib/env';
 import type { Database } from './database.types';
 
 /**
@@ -16,7 +16,7 @@ import type { Database } from './database.types';
 export const createClient = cache(async () => {
   const cookieStore = await cookies();
 
-  return createServerClient<Database>(publicEnv.supabaseUrl, publicEnv.supabaseAnonKey, {
+  return createServerClient<Database>(serverEnv.supabaseUrl, serverEnv.supabaseAnonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

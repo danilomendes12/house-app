@@ -9,7 +9,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ENV_FILE = resolve(process.cwd(), 'apps/web/.env.local');
@@ -75,7 +75,10 @@ function supabaseEnv() {
 }
 
 function ensureEnvFile(credentials) {
-  if (existsSync(ENV_FILE)) return;
+  if (existsSync(ENV_FILE)) {
+    migrateEnvFile();
+    return;
+  }
 
   const ownerEmail = process.env.OWNER_EMAIL;
   if (!ownerEmail) {
@@ -90,8 +93,8 @@ function ensureEnvFile(credentials) {
     ENV_FILE,
     [
       '# Local development (supabase start). Not committed.',
-      `NEXT_PUBLIC_SUPABASE_URL=${credentials.API_URL}`,
-      `NEXT_PUBLIC_SUPABASE_ANON_KEY=${credentials.ANON_KEY}`,
+      `SUPABASE_URL=${credentials.API_URL}`,
+      `SUPABASE_ANON_KEY=${credentials.ANON_KEY}`,
       `SUPABASE_SERVICE_ROLE_KEY=${credentials.SERVICE_ROLE_KEY}`,
       '',
       '# Change this to the e-mail you want to sign in with.',
@@ -102,12 +105,25 @@ function ensureEnvFile(credentials) {
 }
 
 /**
+ * Renames the pre-Fase 9 keys in an existing .env.local. The vars stopped being
+ * `NEXT_PUBLIC_*` when the browser stopped talking to Supabase; without this the app on an
+ * older checkout would just fail to boot with "Missing environment variable SUPABASE_URL".
+ */
+function migrateEnvFile() {
+  const current = readFileSync(ENV_FILE, 'utf8');
+  if (!current.includes('NEXT_PUBLIC_SUPABASE_')) return;
+
+  step('Renaming NEXT_PUBLIC_SUPABASE_* to SUPABASE_* in apps/web/.env.local…');
+  writeFileSync(ENV_FILE, current.replaceAll(/^NEXT_PUBLIC_(SUPABASE_)/gm, '$1'));
+}
+
+/**
  * Refuses to run against anything but the local stack: this script provisions users and
  * is meant for smoke tests, so it must never touch a hosted project by accident.
  */
 function assertLocalTarget() {
   process.loadEnvFile(ENV_FILE);
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
+  const url = process.env.SUPABASE_URL ?? '';
   if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/.test(url)) {
     fail(
       `apps/web/.env.local points at ${url || '(empty)'}, not the local stack.\n` +
@@ -128,8 +144,8 @@ function banner(credentials, lastLine) {
       '',
       '\x1b[32m✓ stack up\x1b[0m',
       `  app     ${APP_URL}`,
-      `  e-mails ${credentials.MAILPIT_URL}   (o magic link cai aqui)`,
       `  studio  ${credentials.STUDIO_URL}`,
+      `  login   ${process.env.OWNER_EMAIL ?? '(OWNER_EMAIL)'} + senha (pnpm db:password <email>)`,
       '',
       `  ${lastLine}`,
       '',

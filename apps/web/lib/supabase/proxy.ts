@@ -1,9 +1,9 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { publicEnv } from '@/lib/env';
+import { serverEnv } from '@/lib/env';
 
 /** Routes reachable without a session. Everything else requires login. */
-const PUBLIC_PATHS = ['/login', '/auth'];
+const PUBLIC_PATHS = ['/login'];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -18,7 +18,7 @@ function isPublicPath(pathname: string): boolean {
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request });
 
-  const supabase = createServerClient(publicEnv.supabaseUrl, publicEnv.supabaseAnonKey, {
+  const supabase = createServerClient(serverEnv.supabaseUrl, serverEnv.supabaseAnonKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();
