@@ -70,6 +70,21 @@ Ordenadas por prioridade:
 
 **Consequências:** fica fácil evoluir para app iOS depois (o iOS falaria direto com Supabase + endpoints do Next). O app roda inteiro em `localhost` durante o desenvolvimento; nada no produto depende de estar publicado.
 
+**Onde isso roda (revisto na Fase 9).** A escolha acima é de *arquitetura*, não de
+hospedagem — e a hospedagem virou uma segunda decisão:
+
+| Opção | Prós | Contras | Veredito |
+|---|---|---|---|
+| **VM própria com `docker compose` (escolhida)** | Dados em casa, sem pausa por inatividade, custo previsível, o mesmo Postgres e o mesmo GoTrue do stack local | A VM é responsabilidade sua: backup, atualização, certificado | ✅ |
+| Vercel + Supabase hospedado | Zero operação, free tier | O projeto Supabase **pausa após 7 dias** sem requisição; magic link exige SMTP e URL de redirect fixa; a config vai *assada* no build | ❌ desde a Fase 9 |
+
+As duas continuam possíveis — o app não sabe onde está. O que a Fase 9 mudou para permitir
+a primeira foi remover as três amarras: SMTP (login por senha), URL de redirect (idem) e
+configuração em build time (`SUPABASE_URL` e `SUPABASE_ANON_KEY` viraram server-only,
+lidas em runtime). Como consequência, **a mesma imagem Docker roda em qualquer VM**,
+configurada só pelo `.env`, e a API do Supabase não precisa ser publicada: quem fala com
+ela é o servidor Next, pela rede interna.
+
 ### 5.2 Estrutura do monorepo
 
 ```
@@ -100,17 +115,45 @@ finance/
 | Web/PWA | Next.js 15+, React, TypeScript strict | App Router, Server Components onde fizer sentido |
 | UI | Tailwind CSS + shadcn/ui | rápido e consistente |
 | Gráficos | Recharts | linha, barra, donut cobrem tudo do escopo |
-| Banco/Auth | Supabase (Postgres + Auth + RLS) | free tier |
-| Deploy | Vercel (Hobby), quando houver | o app não depende disso; roda inteiro em localhost |
+| Banco/Auth | Supabase (Postgres + Auth + RLS) | self-hosted; em dev, a Supabase CLI |
+| Deploy | VM própria, `docker compose` (Fase 9) | `deploy/`; o app não depende disso, roda inteiro em localhost |
 | PWA | `manifest.webmanifest` + service worker escrito à mão | instalável no iPhone via "Adicionar à Tela de Início"; sem dependência extra |
 | Tooling | pnpm workspaces, ESLint, Prettier, Vitest | |
 
+**Stack de deploy (Fase 9), em `deploy/docker-compose.yml`.** Seis serviços, toda imagem
+com tag exata:
+
+| Serviço | Imagem | Publica | Papel |
+|---|---|---|---|
+| `caddy` | `caddy:2.10.2-alpine` | **80/443**, e `:8000` em loopback | TLS automático (Let's Encrypt), proxy do app e roteamento da API |
+| `web` | build local (`Dockerfile`) | — | Next.js `output: 'standalone'`, non-root |
+| `db` | `supabase/postgres:17.6.1.156` | `5432` em loopback | Postgres, schema `auth`, roles `anon`/`authenticated`/`service_role`/`authenticator` |
+| `auth` | `supabase/gotrue:v2.194.0` | — | `/auth/v1/*` |
+| `rest` | `postgrest/postgrest:v14.15` | — | `/rest/v1/*` |
+| `backup` | `postgres:17.7-alpine` | — | `pg_dump` diário, retenção de 14 dias |
+
+As tags são **as mesmas que a Supabase CLI usa no stack local**, de propósito: dev e
+produção rodam o mesmo Postgres e o mesmo GoTrue. Fora do stack, também de propósito:
+Kong (a API não é pública), Studio, Realtime, Storage, imgproxy, Logflare e Supavisor — o
+app não usa nenhum, e um painel de administração do banco exposto na VM seria o oposto do
+que a fase quer.
+
+O Caddy tem dois blocos: o público (domínio → `web:3000`) e um interno em `:8000` que faz
+`handle_path /auth/v1/*` → `auth:9999` e `/rest/v1/*` → `rest:3000` (os dois servem na
+raiz, então o prefixo é removido). É esse endereço interno que `SUPABASE_URL` aponta. As
+portas em `127.0.0.1` são acesso de manutenção — `supabase db push` e provisionamento —
+alcançáveis de fora apenas por túnel SSH.
+
 ### 5.4 Segurança (household fechado)
 
-- **Signups desabilitados** no Supabase Auth; entram apenas os e-mails da `allowed_emails` (magic link). Defesa em profundidade: trigger que rejeita `INSERT` em `auth.users` para e-mails fora da allowlist. Provisionamento é por script (`pnpm db:owner`, `pnpm db:invite`) — não existe convite pela UI.
+- **Entra-se com e-mail e senha** (Fase 9; antes era magic link). Só o meio de provar identidade mudou — o JWT continua sendo emitido pelo GoTrue, e as três camadas abaixo são exatamente as mesmas.
+- **Signups desabilitados** no Supabase Auth; entram apenas os e-mails da `allowed_emails`. Defesa em profundidade: trigger que rejeita `INSERT` em `auth.users` para e-mails fora da allowlist. Provisionamento é por script (`pnpm db:owner`, `pnpm db:invite`) — não existe convite pela UI, e a senha é gerada pelo script e impressa uma única vez.
+- **A resposta do login não distingue "senha errada" de "e-mail inexistente"** — nada na tela revela quem tem conta.
+- **Sem recuperação de senha e sem troca de senha na UI.** O reset é `pnpm db:password <email>` no servidor: um fluxo por e-mail traria o SMTP de volta, que é o que a Fase 9 removeu.
 - **RLS habilitado em todas as tabelas**, política `household_id = current_household_id()` (§6.3). Sessão sem membership não lê nem escreve nada: a função devolve `null` e toda comparação falha, que é a direção segura.
 - **`user_id` não concede acesso.** Depois da Fase 6 ele diz apenas *quem lançou*; quem autoriza é o `household_id`. Confundir os dois é o erro que reabriria os dados de uma casa para outra.
-- **Segredos apenas server-side:** `SUPABASE_SERVICE_ROLE_KEY` e `OWNER_EMAIL` nunca recebem o prefixo `NEXT_PUBLIC_` nem são importados de client component.
+- **Nenhum segredo no client, e nenhuma configuração pública.** Depois da Fase 9 não existe var `NEXT_PUBLIC_*`: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` e `OWNER_EMAIL` são server-only. O browser não fala com o Supabase — todo acesso é Server Component, Server Action ou Route Handler —, e por isso a API não precisa de porta publicada na VM.
+- **As chaves são geradas na instalação** (`scripts/gen-secrets.mjs`), nunca as do stack local da CLI, que são fixas e públicas: expostas, qualquer pessoa forja um token `service_role` e a RLS vira decoração. O `docker-compose.yml` não sobe sem elas.
 
 ## 6. Modelo de dados
 
@@ -405,6 +448,7 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - [x] Household compartilhado: dois logins, os mesmos dados, RLS por household, atribuição de quem lançou — Fase 6, critérios do §9 validados no stack local
 - [x] Import da posição consolidada da XP (§7.1) — Fase 7, critérios do §9 validados no stack local
 - [x] Carteira: alocação por classe/indexador/instituição, concentração, vencimentos próximos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês — Fase 8
+- [x] Self-hosted: login por e-mail e senha, configuração em runtime (imagem portátil) e `docker compose` completo para uma VM, com TLS automático e backup diário — Fase 9, critérios do §9 validados no stack de deploy
 
 ### P2 — futuro (guiar arquitetura, não construir agora)
 - [ ] App iOS nativo (SwiftUI) consumindo Supabase + endpoints existentes; widget de entrada rápida
@@ -448,6 +492,17 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - Dado um ativo encerrado, então ele fica fora da alocação e da rentabilidade do período, e continua na seção de encerrados.
 - Dado que troco o período de 12M para 1M, então a URL muda, a página continua sendo Server Component e o topo, o gráfico e a lista refletem a nova janela.
 
+**Self-hosted (Fase 9):**
+- Dado um `.env` preenchido em uma VM limpa, quando rodo a sequência documentada do README, então o app responde em `https://<domínio>` e eu entro com e-mail e senha.
+- Dado que peço a mesma imagem em outra VM com `.env` diferente, então ela funciona **sem rebuild** — nenhuma configuração de Supabase ficou assada no bundle.
+- Dado um e-mail fora de `allowed_emails`, quando tento entrar, então a resposta é idêntica à de senha errada, e nada no app revela se o usuário existe.
+- Dado que o `enforce_email_allowlist` está ativo, quando tento criar usuário fora da lista pela API admin, então o banco recusa.
+- Dado `docker compose down` seguido de `up`, então os dados continuam lá (volume nomeado).
+- Dado um dump gerado pelo serviço de backup, quando sigo o procedimento de restore do README em um banco vazio, então os lançamentos e o patrimônio voltam íntegros.
+- Dado que as duas pessoas do household entram, então cada uma vê os mesmos dados e a atribuição por `user_id` continua correta (a RLS não mudou).
+- Dado que abro pelo iPhone no domínio com HTTPS, então a PWA instala e o service worker registra.
+- Dado `pnpm dev:local` em uma máquina de desenvolvimento, então tudo continua funcionando como antes desta fase.
+
 **Household (Fase 6):**
 - Dado que as duas pessoas estão na casa, quando uma lança uma despesa, então a outra a vê no mesmo mês, com a mesma lista de categorias e o mesmo orçamento.
 - Dado um convite novo (`pnpm db:invite`), quando a pessoa entra pela primeira vez, então ela cai no household existente e **não** ganha uma segunda cópia das categorias padrão.
@@ -469,6 +524,7 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | **6 — Casa** | Duas pessoas, os mesmos dados | Household (§6.3): schema, RLS por membership, `pnpm db:invite`, deploy em Supabase Free + Vercel Hobby |
 | **7 — Investimentos por arquivo** | Fim da digitação do patrimônio | Import da posição consolidada da XP (§7.1), idempotente por `assets.external_ref` |
 | **8 — Carteira** | Patrimônio vira acompanhamento, não cadastro | Alocação por classe/indexador/instituição, concentração, vencimentos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês (§6.2). Sem migration |
+| **9 — Self-hosted** | O app instala em uma VM qualquer | Login por e-mail e senha (fim do magic link, do SMTP e da URL de redirect), configuração do Supabase em runtime (imagem portátil, fim das `NEXT_PUBLIC_*`), `Dockerfile` standalone e `deploy/docker-compose.yml` com Caddy + Postgres + GoTrue + PostgREST + backup diário (§5.3). Sem migration |
 
 ## 11. Questões em aberto
 
@@ -599,6 +655,70 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
   para daltonismo). A rampa é o roxo da marca em cinco degraus de luminosidade, validada
   para luminosidade monótona, ΔL ≥ 0,06 e ≥ 2:1 contra a superfície nos dois temas — e a
   cor é redundante de propósito: todo valor está escrito por extenso na lista.
+- **Senha, não magic link nem OTP de 6 dígitos** (Fase 9): o magic link exige um provedor
+  de SMTP *e* uma URL de redirect fixa — em uma VM, sem provedor de e-mail configurado,
+  não existe login nenhum. O OTP dispensaria a redirect URL, mas continua precisando de
+  SMTP para entregar o código; só a senha corta as duas dependências. Para duas pessoas
+  fixas, provisionadas por script, com cadastro desabilitado no servidor, é o modelo mais
+  simples que ainda é honesto. O que **não** mudou: `enable_signup = false`, a
+  `allowed_emails` com o trigger em `auth.users`, o `provision_user` e a RLS por
+  household. Só o meio de provar identidade é outro.
+- **Sem "esqueci minha senha" e sem troca de senha na UI** (Fase 9): o reset é
+  `pnpm db:password <email>` no servidor. Um fluxo de recuperação por e-mail traria o SMTP
+  de volta pela porta dos fundos — exatamente o que a fase remove. É uma regressão de
+  conveniência assumida, para duas pessoas com acesso à VM. Pelo mesmo motivo os scripts
+  de provisionamento geram a senha e a imprimem **uma única vez**: ela não fica guardada
+  em lugar nenhum além do hash do GoTrue.
+- **A configuração do Supabase é lida em runtime** (Fase 9): `SUPABASE_URL` e
+  `SUPABASE_ANON_KEY` deixaram de ser `NEXT_PUBLIC_*` e passaram a `serverEnv`, que lê por
+  getter. Como `NEXT_PUBLIC_*` é inlinado pelo Next em build time, a imagem Docker ficaria
+  amarrada a uma instalação específica — trocar de VM exigiria rebuild. O que tornou isso
+  possível foi apagar `lib/supabase/client.ts`: nada importava o client de browser, todo
+  acesso já era Server Component, Server Action ou Route Handler. Consequência de
+  segurança que vale registrar: **a API do Supabase não precisa ser publicada**, porque
+  ninguém fora da rede interna fala com ela.
+- **Sem Kong** (Fase 9): o gateway oficial do Supabase existe para key-auth, CORS e rate
+  limit de uma API *pública*. Aqui a API não é pública — quem fala com ela é o servidor
+  Next, na rede interna do Docker —, o role `anon` não tem grant nenhum (as migrations
+  revogam tudo) e o PostgREST valida o JWT sozinho. O Caddy cobre o roteamento e ainda
+  resolve o TLS: menos um container e menos um arquivo de config para divergir.
+- **Stack mínimo** (Fase 9): nada de Studio, Realtime, Storage, imgproxy, Logflare ou
+  Supavisor — o app não usa nenhum. Studio em produção seria um painel de administração do
+  banco exposto na VM, o oposto do que a fase quer.
+- **As chaves são geradas na instalação** (Fase 9): `scripts/gen-secrets.mjs` emite o JWT
+  secret, a senha do Postgres e os JWTs `anon` e `service_role` assinados com ele. As do
+  stack local da CLI são **fixas e públicas**, iguais em toda instalação: expostas em uma
+  VM, qualquer pessoa forja um token `service_role` e a RLS inteira (§5.4) vira decoração.
+  O `docker-compose.yml` não sobe sem essas variáveis — nenhuma tem default embutido.
+- **A Supabase CLI continua sendo a única dona do schema** (Fase 9): migrations em
+  produção são `supabase db push --db-url`, uma operação de cliente, rodada por túnel SSH.
+  Um init container aplicando os `.sql` na mão criaria um segundo histórico de migrations,
+  divergindo do `supabase db reset` local.
+- **A ordem de subida importa** (Fase 9): o GoTrue cria `auth.users` nas migrations dele e
+  a nossa primeira migration põe um trigger em cima dessa tabela. Sequência: `db` → `auth`
+  saudável → `db push` → resto. Está no `depends_on` e no `deploy/README.md`.
+- **A imagem `supabase/postgres` não dá senha aos roles** (Fase 9): ela cria `auth`,
+  `auth.uid()` e os roles, mas quem define as senhas de `postgres`, `supabase_auth_admin` e
+  `authenticator` é um arquivo que a CLI injeta e que **não** está na imagem. Sem
+  `deploy/init/zz-role-passwords.sql` o GoTrue morre no boot com *password authentication
+  failed*. Ele roda uma única vez, com o volume vazio: trocar `POSTGRES_PASSWORD` no
+  `.env` depois disso não repropaga.
+- **`pnpm dev:local` continua sendo o fluxo de desenvolvimento** (Fase 9): o compose é só
+  para deploy. O ciclo com a CLI (reset, seed, `gen types`) é melhor e já funciona; as
+  duas configurações têm que continuar equivalentes, e é por isso que as imagens do
+  compose são pinadas nas mesmas versões que a CLI usa.
+- **Backup diário por `pg_dump`, retenção de 14 dias** (Fase 9), em volume nomeado: num
+  VPS o disco é responsabilidade sua, e até aqui não havia backup nenhum. O dump é
+  completo (schema + dados, `public` e `auth`), o que faz o restore funcionar contra um
+  banco vazio sem reprovisionar ninguém. O restore é como `supabase_admin`, porque o schema
+  `auth` pertence a ele — como `postgres` a restauração falha em centenas de objetos. O
+  procedimento está no `deploy/README.md` e foi executado: backup que nunca foi restaurado
+  não é backup.
+- **HTTPS com domínio, não IP** (Fase 9): com um domínio (inclusive DuckDNS) o Caddy emite
+  o certificado sozinho, e é o secure context que faz o service worker de `public/sw.js`
+  registrar — sem ele a PWA perde o offline e o iPhone não instala. `tls internal` fica
+  documentado como saída para LAN, com o custo explícito (certificado autoassinado, aviso
+  no browser, sem PWA no iOS); para acesso externo sem abrir porta no roteador, Tailscale.
 - **Gráfico de patrimônio é linha simples** (Fase 4): a decisão de virar small multiples na
   Fase 2 valia para o gasto *por categoria*, onde a paleta semeada falhava separação para
   daltonismo (laranja↔verde, ΔE 4,8). Patrimônio é série única, então não há cor
