@@ -212,6 +212,38 @@ asset_snapshots (
 - Todo ativo recebe **snapshot manual** (tela simples: "atualizar valor atual").
 - Evolução mensal = série dos snapshots agregados por mês (último snapshot de cada mês, por ativo). Um mês sem snapshot novo herda o último valor conhecido do ativo — senão o patrimônio total pareceria despencar em todo mês sem atualização.
 
+**Carteira (Fase 8).** O rendimento acima é vitalício e não distingue "cresceu porque
+aportei" de "cresceu porque rendeu". A análise de carteira acrescenta, sem mudar nada do
+que já existe e sem migration:
+
+- **Classe do ativo** é *derivada* de `assets.type`, não cadastrada: renda fixa
+  (`cdb`, `tesouro`, `lci_lca`, `poupanca`), renda variável (`acao`, `fii`, `etf`),
+  fundos (`fundo`), cripto (`cripto`), outros (`outro`).
+- **Janela de análise** (`1M · 6M · 12M · Tudo`, default 12M) é ancorada em fim de mês:
+  "1M" vai do último dia do mês anterior até hoje. Snapshot é fotografia de fim de mês
+  (é o que a posição da XP é), então uma janela por dia corrido cairia no mesmo valor
+  arrastado enquanto o rótulo prometia outra coisa. `Tudo` começa um mês antes da
+  movimentação mais antiga, para o saldo inicial ser genuinamente zero.
+- A janela é o intervalo **`(início, fim]`**: um fluxo datado exatamente no dia-âncora
+  pertence ao saldo inicial, não ao período — senão ele contaria duas vezes.
+- **Valor em uma data** = último snapshot ≤ data (arrastado) e, antes do primeiro
+  snapshot, o valor aportado até ali. É a mesma regra do total do topo, então alocação,
+  período e total nunca discordam.
+- **Fluxo líquido no período** = Σ aportes − Σ resgates dentro da janela.
+- **Rentabilidade do período** = Modified Dietz:
+  `R = (Vf − Vi − F) / (Vi + Σ wi × Fi)`, com `wi = (T − ti)/T`. O numerador é exato
+  (`bigint`); só o denominador — média ponderada, que não é um número inteiro de
+  centavos — vira `number`. Sem base positiva (ou sem janela com dias), a
+  rentabilidade é `null` e a tela mostra "—", nunca 0%.
+- **Decomposição mensal**: por mês, `fluxo` e `valorização = Δvalor − fluxo`. A soma das
+  valorizações do período fecha exatamente com `Vf − Vi − F`.
+- **Posição desatualizada** = ativo aberto cujo snapshot mais recente tem mais de
+  **45 dias**, ou que nunca teve snapshot. Continua contando no total.
+- **Vencimento próximo** = ativo de renda fixa com `maturity_date` dentro de **90 dias**.
+- **Alocação**: fatias por classe, indexador ou instituição, ordenadas por valor, com a
+  cauda além de 5 fatias agrupada em "Outros". Os percentuais são distribuídos por maior
+  resto, de modo que somam exatamente 100%.
+
 ### 6.3 Household (Fase 6)
 
 ```sql
@@ -372,6 +404,7 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - [x] Patrimônio: CRUD de ativos, aportes/resgates, snapshots manuais, rendimento por ativo, gráfico de evolução total — Fase 4, critério do §9 validado no stack local
 - [x] Household compartilhado: dois logins, os mesmos dados, RLS por household, atribuição de quem lançou — Fase 6, critérios do §9 validados no stack local
 - [x] Import da posição consolidada da XP (§7.1) — Fase 7, critérios do §9 validados no stack local
+- [x] Carteira: alocação por classe/indexador/instituição, concentração, vencimentos próximos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês — Fase 8
 
 ### P2 — futuro (guiar arquitetura, não construir agora)
 - [ ] App iOS nativo (SwiftUI) consumindo Supabase + endpoints existentes; widget de entrada rápida
@@ -406,6 +439,15 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - Dado que importei o mesmo arquivo duas vezes, então a segunda importação cria 0 ativos e mantém um único snapshot por ativo naquela data.
 - Dado um ativo cujo tipo eu corrigi à mão em `/assets`, quando reimporto o arquivo, então a correção permanece.
 
+**Carteira (Fase 8):**
+- Dado um ativo com R$ 10.000 aportados em janeiro, snapshot de R$ 10.000 em 30/jun, aporte de R$ 10.000 em 01/jul e snapshot de R$ 20.400 em 31/jul, quando abro o ativo com período "1M", então vejo valorização de **R$ 400** — e a rentabilidade **não** é ~104%: o aporte não conta como rendimento.
+- Dado que a carteira tem 60% em renda fixa e 40% em renda variável, quando abro Patrimônio, então vejo as duas classes com valor e percentual, e a soma dos percentuais é exatamente 100% (arredondamento não produz 99% nem 101% visíveis).
+- Dado um ativo aberto cujo último snapshot é de 90 dias atrás, então ele aparece em "posições desatualizadas" com "há 90 dias", e continua contando no total.
+- Dado um CDB que vence em 60 dias, então ele aparece em "vencimentos próximos" com data e valor.
+- Dado um período sem aporte nem resgate, então a valorização do período é exatamente a diferença entre o valor final e o inicial.
+- Dado um ativo encerrado, então ele fica fora da alocação e da rentabilidade do período, e continua na seção de encerrados.
+- Dado que troco o período de 12M para 1M, então a URL muda, a página continua sendo Server Component e o topo, o gráfico e a lista refletem a nova janela.
+
 **Household (Fase 6):**
 - Dado que as duas pessoas estão na casa, quando uma lança uma despesa, então a outra a vê no mesmo mês, com a mesma lista de categorias e o mesmo orçamento.
 - Dado um convite novo (`pnpm db:invite`), quando a pessoa entra pela primeira vez, então ela cai no household existente e **não** ganha uma segunda cópia das categorias padrão.
@@ -426,6 +468,7 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | **5 — Refinos** | Qualidade de vida | Exportação de dados, notificações de orçamento, melhorias de UX apontadas pelo uso real |
 | **6 — Casa** | Duas pessoas, os mesmos dados | Household (§6.3): schema, RLS por membership, `pnpm db:invite`, deploy em Supabase Free + Vercel Hobby |
 | **7 — Investimentos por arquivo** | Fim da digitação do patrimônio | Import da posição consolidada da XP (§7.1), idempotente por `assets.external_ref` |
+| **8 — Carteira** | Patrimônio vira acompanhamento, não cadastro | Alocação por classe/indexador/instituição, concentração, vencimentos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês (§6.2). Sem migration |
 
 ## 11. Questões em aberto
 
@@ -515,6 +558,47 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 - **Não há convite pela UI** (Fase 6): `households` e `household_members` são somente leitura
   para o app; quem provisiona é `pnpm db:invite` com a service role. Uma tela de convite exigiria
   papel de admin e fluxo de aceite para dois usuários que se conhecem pessoalmente.
+- **Classe de ativo é derivada, não cadastrada** (Fase 8): `type` já existe e o import já o
+  infere; uma coluna de classe seria um segundo lugar para errar e um segundo lugar para
+  corrigir. O mapa fixo mora em `packages/shared/portfolio.ts` — mudá-lo é mudar a alocação
+  de todo mundo de uma vez, que é exatamente o que se quer de uma derivação.
+- **Rentabilidade de período usa Modified Dietz** (Fase 8): "valor final − valor inicial"
+  atribui um aporte de meio de período a rendimento — o erro que a fase existe para
+  corrigir. XIRR ficou de fora: exige iteração numérica e não é mais legível para quem lê.
+  O numerador continua em `bigint`; só o denominador ponderado vira `number`, porque uma
+  média ponderada por dias não é um número inteiro de centavos.
+- **O rendimento vitalício não muda de fórmula** (Fase 8): `assetPerformance` é o contrato
+  do §6.2 e do critério de aceite do §9 ("R$ 480, +4,8%"). A rentabilidade de período é um
+  número *adicional*, com rótulo próprio ("no período"), nunca um substituto — as duas
+  aparecem lado a lado na tela do ativo.
+- **A janela é ancorada em fim de mês** (Fase 8): "1M" é do último dia do mês anterior até
+  hoje, não "hoje menos 30 dias". Os snapshots chegam em fim de mês (a posição da XP é uma
+  fotografia de fim de mês), então uma janela por dia corrido arrastaria o mesmo valor de
+  fim de mês enquanto o rótulo prometia outro recorte. De quebra, cada barra do gráfico de
+  aporte vs. valorização é um mês inteiro.
+- **Sem benchmark externo** (Fase 8): nada de comparar com CDI ou IBOV. Exigiria série de
+  mercado, e o app não tem integração (§3). "Rendeu X% no período", sem comparação, é o que
+  dá para afirmar com honestidade.
+- **Alocação-alvo e rebalanceamento ficam fora** (Fase 8): seriam a única parte com
+  migration (tabela de metas) e encostam em recomendação de investimento (§3). Nada foi
+  modelado que os impeça depois.
+- **Concentração é fato, não alerta** (Fase 8): a tela diz "maior posição: 17,4% do total"
+  e para por aí. Sem cor de perigo, sem limite, sem "considere diversificar" — o produto é
+  de registro e acompanhamento (§3).
+- **Ativo sem snapshot entra na alocação pelo valor aportado** (Fase 8): é a mesma regra já
+  vigente para o total (acima). O contrário faria a alocação discordar do número impresso
+  logo acima dela. Ele aparece simultaneamente em "posições desatualizadas", que é onde o
+  palpite pede confirmação.
+- **Período sem dado no início não é zero** (Fase 8): sem snapshot anterior ao início da
+  janela, a rentabilidade é medida a partir do primeiro snapshot *dentro* dela e a tela diz
+  "desde DD/MM" em vez de fingir 12 meses. Se esse primeiro snapshot for do próprio dia de
+  hoje, não há janela: a tela mostra "—", não 0% — "não medi" e "ficou parado" são
+  afirmações diferentes.
+- **A alocação é uma barra 100% de um só matiz, com a lista ao lado** (Fase 8): oito fatias
+  coloridas repetiriam o erro que virou small multiples na Fase 2 (a paleta falha separação
+  para daltonismo). A rampa é o roxo da marca em cinco degraus de luminosidade, validada
+  para luminosidade monótona, ΔL ≥ 0,06 e ≥ 2:1 contra a superfície nos dois temas — e a
+  cor é redundante de propósito: todo valor está escrito por extenso na lista.
 - **Gráfico de patrimônio é linha simples** (Fase 4): a decisão de virar small multiples na
   Fase 2 valia para o gasto *por categoria*, onde a paleta semeada falhava separação para
   daltonismo (laranja↔verde, ΔE 4,8). Patrimônio é série única, então não há cor
