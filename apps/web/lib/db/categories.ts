@@ -23,7 +23,7 @@ export async function listCategories({ includeArchived = false } = {}): Promise<
 }
 
 export async function createCategory(input: CategoryInput): Promise<void> {
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
 
   // New categories sort after the seeded ones without renumbering anything.
   const last = unwrap(
@@ -35,6 +35,7 @@ export async function createCategory(input: CategoryInput): Promise<void> {
   );
 
   const { error } = await supabase.from('categories').insert({
+    household_id: householdId,
     user_id: userId,
     name: input.name,
     kind: input.kind,

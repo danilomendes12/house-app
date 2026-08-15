@@ -19,7 +19,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:reset": "supabase db reset",
-    "db:owner": "node scripts/create-owner.mjs"
+    "db:owner": "node scripts/create-owner.mjs",
+    "db:invite": "node scripts/invite-member.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

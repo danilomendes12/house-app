@@ -143,9 +143,10 @@ export async function getTransaction(id: string): Promise<Transaction | null> {
 }
 
 export async function createTransaction(input: TransactionInput): Promise<void> {
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
 
   const { error } = await supabase.from('transactions').insert({
+    household_id: householdId,
     user_id: userId,
     date: input.date,
     description: input.description,

@@ -22,7 +22,7 @@ export interface BudgetEntry {
  * statements (one upsert, one delete) rather than one round-trip per category.
  */
 export async function saveMonthBudgets(month: IsoMonth, entries: BudgetEntry[]): Promise<void> {
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
   const monthDate = monthStart(month);
 
   const cleared = entries
@@ -32,6 +32,7 @@ export async function saveMonthBudgets(month: IsoMonth, entries: BudgetEntry[]):
   const rows = entries
     .filter((entry) => entry.amountCents !== null)
     .map((entry) => ({
+      household_id: householdId,
       user_id: userId,
       category_id: entry.categoryId,
       month: monthDate,
@@ -41,7 +42,7 @@ export async function saveMonthBudgets(month: IsoMonth, entries: BudgetEntry[]):
   if (rows.length > 0) {
     const { error } = await supabase
       .from('budgets')
-      .upsert(rows, { onConflict: 'user_id,category_id,month' });
+      .upsert(rows, { onConflict: 'household_id,category_id,month' });
     if (error) throw error;
   }
 
@@ -65,7 +66,7 @@ export async function saveMonthBudgets(month: IsoMonth, entries: BudgetEntry[]):
  * one (unlike a render pass, where Next dedupes the identical fetch).
  */
 export async function copyBudgets(from: IsoMonth, to: IsoMonth): Promise<number> {
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
 
   const [source, existing] = await Promise.all([
     supabase.from('budgets').select('*').eq('month', monthStart(from)),
@@ -77,6 +78,7 @@ export async function copyBudgets(from: IsoMonth, to: IsoMonth): Promise<number>
     .map(toBudget)
     .filter((budget) => !alreadySet.has(budget.categoryId))
     .map((budget) => ({
+      household_id: householdId,
       user_id: userId,
       category_id: budget.categoryId,
       month: monthStart(to),

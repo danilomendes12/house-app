@@ -61,11 +61,12 @@ export async function getAsset(id: string): Promise<Asset | null> {
 
 /** @returns the new asset's id, so the caller can send the user straight to it. */
 export async function createAsset(input: AssetInput): Promise<string> {
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
 
   const { data, error } = await supabase
     .from('assets')
     .insert({
+      household_id: householdId,
       user_id: userId,
       name: input.name,
       type: input.type,
@@ -131,9 +132,10 @@ export async function listAssetEvents(assetId?: string): Promise<AssetEvent[]> {
 }
 
 export async function createAssetEvent(input: AssetEventInput): Promise<void> {
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
 
   const { error } = await supabase.from('asset_events').insert({
+    household_id: householdId,
     user_id: userId,
     asset_id: input.assetId,
     date: input.date,
@@ -167,10 +169,11 @@ export async function listAssetSnapshots(assetId?: string): Promise<AssetSnapsho
  * on the same date overwrites instead of leaving two truths for one day.
  */
 export async function upsertAssetSnapshot(input: AssetSnapshotInput): Promise<void> {
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
 
   const { error } = await supabase.from('asset_snapshots').upsert(
     {
+      household_id: householdId,
       user_id: userId,
       asset_id: input.assetId,
       date: input.date,

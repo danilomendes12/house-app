@@ -24,9 +24,10 @@ export interface ImportResult {
 /**
  * Writes imported rows, idempotently (SPEC §7).
  *
- * `on conflict (user_id, external_id) do nothing` is what makes re-importing a file safe:
- * the second run inserts nothing and reports every row as ignored. PostgREST returns only
- * the rows it actually wrote, which is where the counts come from.
+ * `on conflict (household_id, external_id) do nothing` is what makes re-importing a file
+ * safe: the second run inserts nothing and reports every row as ignored — including when
+ * the other member of the household is the one who imported it first. PostgREST returns
+ * only the rows it actually wrote, which is where the counts come from.
  *
  * Batched because a year of statements is thousands of rows and PostgREST has a request
  * size limit; the conflict clause makes a partially applied import harmless to retry.
@@ -34,13 +35,14 @@ export interface ImportResult {
 export async function importTransactions(rows: ImportRow[]): Promise<ImportResult> {
   if (rows.length === 0) return { inserted: 0, ignored: 0 };
 
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
 
   // A file can hold the same external_id twice only if the occurrence counter failed;
   // guard anyway, because Postgres rejects a batch that conflicts with itself.
   const unique = [...new Map(rows.map((row) => [row.externalId, row])).values()];
 
   const payload = unique.map((row) => ({
+    household_id: householdId,
     user_id: userId,
     external_id: row.externalId,
     date: row.date,
@@ -60,7 +62,7 @@ export async function importTransactions(rows: ImportRow[]): Promise<ImportResul
     const { data, error } = await supabase
       .from('transactions')
       .upsert(payload.slice(start, start + BATCH_SIZE), {
-        onConflict: 'user_id,external_id',
+        onConflict: 'household_id,external_id',
         ignoreDuplicates: true,
       })
       .select('id');

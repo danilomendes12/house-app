@@ -33,9 +33,10 @@ export async function listCategoryRules(): Promise<CategoryRule[]> {
 }
 
 export async function createCategoryRule(input: CategoryRuleInput): Promise<void> {
-  const { supabase, userId } = await authedClient();
+  const { supabase, userId, householdId } = await authedClient();
 
   const { error } = await supabase.from('category_rules').insert({
+    household_id: householdId,
     user_id: userId,
     matcher: input.matcher,
     category_id: input.categoryId,
