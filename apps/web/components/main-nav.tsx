@@ -8,14 +8,16 @@ import type { LucideIcon } from 'lucide-react';
 const items: {
   href: '/' | '/trends' | '/transactions' | '/budgets' | '/assets';
   label: string;
+  /** Tab-bar label on the phone: five tabs share ~75px each, "Extrato mensal" wraps. */
+  shortLabel?: string;
   icon: LucideIcon;
 }[] = [
   { href: '/', label: 'Resumo', icon: LayoutGrid },
-  { href: '/trends', label: 'Tendências', icon: TrendingUp },
-  // "Extrato", not "Lançar": the tab leads to the month's list. Entry is the FAB.
-  { href: '/transactions', label: 'Extrato', icon: Receipt },
-  { href: '/budgets', label: 'Orçamento', icon: Target },
+  // "Extrato mensal", not "Lançar": the tab leads to the month's list. Entry is the FAB.
+  { href: '/transactions', label: 'Extrato mensal', shortLabel: 'Extrato', icon: Receipt },
   { href: '/assets', label: 'Patrimônio', icon: Wallet },
+  { href: '/trends', label: 'Tendências', icon: TrendingUp },
+  { href: '/budgets', label: 'Orçamento', icon: Target },
 ];
 
 /**
@@ -32,7 +34,7 @@ export function MainNav() {
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <ul className="mx-auto flex w-full max-w-3xl items-stretch sm:gap-1 sm:px-4">
-        {items.map(({ href, label, icon: Icon }) => {
+        {items.map(({ href, label, shortLabel, icon: Icon }) => {
           const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
 
           return (
@@ -47,7 +49,14 @@ export function MainNav() {
                 }`}
               >
                 <Icon aria-hidden className="size-5 sm:size-4" />
-                {label}
+                {shortLabel ? (
+                  <>
+                    <span className="sm:hidden">{shortLabel}</span>
+                    <span className="hidden sm:inline">{label}</span>
+                  </>
+                ) : (
+                  label
+                )}
               </Link>
             </li>
           );

@@ -5,7 +5,9 @@ import { CategoryIcon } from '@/components/category-icon';
 import { EmptyState, cardClass } from '@/components/fields';
 import { MonthNav } from '@/components/month-nav';
 import { ProgressBar } from '@/components/progress-bar';
+import { YieldTag } from '@/components/yield-tag';
 import { getMonthOverview, type CategoryLine } from '@/lib/db/month-overview';
+import { getNetWorthOverview } from '@/lib/db/net-worth';
 import { resolveMonth } from '@/lib/month-param';
 
 export const metadata = { title: 'Resumo · Finanças' };
@@ -68,7 +70,7 @@ export default async function DashboardPage({
   searchParams: Promise<{ month?: string }>;
 }) {
   const month = resolveMonth((await searchParams).month);
-  const overview = await getMonthOverview(month);
+  const [overview, netWorth] = await Promise.all([getMonthOverview(month), getNetWorthOverview()]);
 
   const hasBudgets = overview.budgetedCents > ZERO_CENTS;
   const isOverBudget = overview.budgetRemainingCents < ZERO_CENTS;
@@ -128,6 +130,29 @@ export default async function DashboardPage({
           </p>
         )}
       </div>
+
+      {/* Patrimônio in one line — the headline of the Patrimônio tab, no chart, no per-asset
+          breakdown. Tapping the card is how you get the full screen. */}
+      {netWorth.open.length > 0 ? (
+        <Link href="/assets" className={`${cardClass} block p-5`}>
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-sm text-[var(--color-ink-muted)]">Patrimônio</p>
+            <span className="text-xs text-[var(--color-brand)]">Ver tudo →</span>
+          </div>
+
+          <p className="mt-1 text-2xl font-semibold tabular-nums">
+            {formatCents(netWorth.totalCents)}
+          </p>
+
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-ink-muted)]">
+            <span className="tabular-nums">{formatCents(netWorth.investedCents)} aportados</span>
+            <YieldTag yieldCents={netWorth.yieldCents} yieldPercent={netWorth.yieldPercent} />
+            <span>
+              · {netWorth.open.length} {netWorth.open.length === 1 ? 'ativo' : 'ativos'}
+            </span>
+          </div>
+        </Link>
+      ) : null}
 
       {overview.uncategorizedCount > 0 ? (
         <Link href="/uncategorized" className={`${cardClass} block px-4 py-3 text-sm`}>
