@@ -4,20 +4,69 @@ import { ChevronLeft, Pencil } from 'lucide-react';
 import {
   ASSET_INDEXER_LABELS,
   ASSET_TYPE_LABELS,
+  ZERO_CENTS,
+  compareIsoDate,
   formatCents,
   formatIsoDate,
   todayIso,
+  toReais,
+  valueAt,
+  type Cents,
+  type DateRange,
+  type IsoDate,
 } from '@finance/shared';
+import { AssetValueChart, type AssetValuePoint } from '@/components/asset-value-chart';
 import { EmptyState, cardClass } from '@/components/fields';
+import { PeriodNav } from '@/components/period-nav';
 import { SubmitButton } from '@/components/submit-button';
 import { YieldTag } from '@/components/yield-tag';
 import { getAssetDetail } from '@/lib/db/net-worth';
 import type { AssetEvent, AssetSnapshot } from '@/lib/db/types';
+import { resolvePeriod } from '@/lib/period-param';
 import { removeAsset, removeAssetEvent, removeAssetSnapshot, toggleAssetClosed } from '../actions';
 import { AssetEventForm } from '../event-form';
 import { AssetSnapshotForm } from '../snapshot-form';
 
 export const metadata = { title: 'Ativo · Finanças' };
+
+/**
+ * The series the chart draws: one point per day the asset was valued or money moved,
+ * inside the window. Days with only a movement still get a point — carried forward from
+ * the last snapshot — so the deposit has a place on the line to be marked at.
+ */
+function valuePoints(
+  events: AssetEvent[],
+  snapshots: AssetSnapshot[],
+  range: DateRange,
+): AssetValuePoint[] {
+  const dates = new Set<IsoDate>();
+
+  for (const { date } of [...events, ...snapshots]) {
+    if (compareIsoDate(date, range.start) < 0 || compareIsoDate(date, range.end) > 0) continue;
+    dates.add(date);
+  }
+
+  // The opening balance anchors the line at the start of the window.
+  if (snapshots.some((snapshot) => compareIsoDate(snapshot.date, range.start) <= 0)) {
+    dates.add(range.start);
+  }
+
+  return [...dates].sort(compareIsoDate).map((date) => {
+    let flow: Cents = ZERO_CENTS;
+    for (const event of events) {
+      if (event.date !== date) continue;
+      flow += event.type === 'contribution' ? event.amountCents : -event.amountCents;
+    }
+
+    return {
+      date,
+      label: formatIsoDate(date).slice(0, 5),
+      fullLabel: formatIsoDate(date),
+      value: toReais(valueAt(events, snapshots, date)),
+      flow: toReais(flow),
+    };
+  });
+}
 
 function EventRow({ event }: { event: AssetEvent }) {
   const isContribution = event.type === 'contribution';
@@ -74,12 +123,21 @@ function SnapshotRow({ snapshot }: { snapshot: AssetSnapshot }) {
   );
 }
 
-export default async function AssetPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AssetPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ period?: string }>;
+}) {
   const { id } = await params;
-  const detail = await getAssetDetail(id);
+  const period = resolvePeriod((await searchParams).period);
+
+  const detail = await getAssetDetail(id, period);
   if (!detail) notFound();
 
-  const { asset, performance, events, snapshots } = detail;
+  const { asset, performance, events, snapshots, range } = detail;
+  const points = valuePoints(events, snapshots, range);
 
   const subtitle = [
     ASSET_TYPE_LABELS[asset.type],
@@ -98,7 +156,7 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
   return (
     <section className="space-y-4">
       <Link
-        href="/assets"
+        href={{ pathname: '/assets', query: { period } }}
         className="inline-flex items-center gap-1 text-sm text-[var(--color-ink-muted)]"
       >
         <ChevronLeft aria-hidden className="size-4" />
@@ -128,6 +186,8 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
         </Link>
       </div>
 
+      <PeriodNav period={period} basePath={`/assets/${asset.id}`} />
+
       <div className={`${cardClass} p-5`}>
         <p className="text-sm text-[var(--color-ink-muted)]">
           {performance.snapshotDate === null
@@ -136,10 +196,55 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
         </p>
         <p className="mt-1 text-3xl font-semibold">{formatCents(performance.currentCents)}</p>
 
-        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-ink-muted)]">
+        {/* Two different questions, so two labelled numbers: what it earned in the window
+            and what it earned since it was bought (SPEC §6.2). */}
+        <dl className="mt-3 grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <dt className="text-[var(--color-ink-muted)]">
+              {detail.period.partial ? `Desde ${formatIsoDate(detail.period.start)}` : 'No período'}
+            </dt>
+            <dd className="mt-0.5">
+              <YieldTag
+                yieldCents={detail.period.gainCents}
+                yieldPercent={detail.period.returnPercent}
+              />
+            </dd>
+          </div>
+
+          <div>
+            <dt className="text-[var(--color-ink-muted)]">Desde o primeiro aporte</dt>
+            <dd className="mt-0.5">
+              <YieldTag
+                yieldCents={performance.yieldCents}
+                yieldPercent={performance.yieldPercent}
+              />
+            </dd>
+          </div>
+        </dl>
+
+        <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
           <span className="tabular-nums">{formatCents(performance.investedCents)} aportados</span>
-          <YieldTag yieldCents={performance.yieldCents} yieldPercent={performance.yieldPercent} />
+          {detail.period.flowCents === ZERO_CENTS ? null : (
+            <>
+              {' · '}
+              <span className="tabular-nums">
+                {detail.period.flowCents < ZERO_CENTS
+                  ? `${formatCents(-detail.period.flowCents)} resgatados no período`
+                  : `${formatCents(detail.period.flowCents)} aportados no período`}
+              </span>
+            </>
+          )}
         </p>
+
+        {points.length > 1 ? (
+          <>
+            <h3 className="mt-5 mb-1 text-xs font-medium text-[var(--color-ink-muted)]">
+              Valor no período{' '}
+              <span className="font-normal">— ● marca os dias em que houve aporte ou resgate</span>
+            </h3>
+            <AssetValueChart points={points} />
+          </>
+        ) : null}
 
         {performance.snapshotDate === null ? (
           <p className="mt-3 text-xs text-[var(--color-ink-muted)]">

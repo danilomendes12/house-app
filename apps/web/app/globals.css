@@ -13,6 +13,18 @@
   --color-danger: oklch(0.58 0.21 25);
   /* Income and money left to spend. */
   --color-positive: oklch(0.58 0.15 155);
+  /*
+   * Allocation ramp: one hue (the brand's), stepped light→dark, biggest slice darkest.
+   * Deliberately not five categorical hues — the palette already fails colour-vision
+   * separation past three (SPEC §12), and nothing here needs to be told apart by hue:
+   * every slice is named with its value in the list beside the bar. Steps validated for
+   * monotone lightness, ΔL ≥ 0.06 and ≥ 2:1 against the surface.
+   */
+  --color-alloc-1: oklch(0.42 0.17 285);
+  --color-alloc-2: oklch(0.5 0.18 285);
+  --color-alloc-3: oklch(0.58 0.16 285);
+  --color-alloc-4: oklch(0.66 0.13 285);
+  --color-alloc-5: oklch(0.74 0.1 285);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +37,12 @@
     --color-brand: oklch(0.72 0.15 285);
     --color-danger: oklch(0.7 0.17 25);
     --color-positive: oklch(0.75 0.14 155);
+    /* Same ramp, re-stepped against the dark surface — not an inversion of the light one. */
+    --color-alloc-1: oklch(0.86 0.08 285);
+    --color-alloc-2: oklch(0.78 0.11 285);
+    --color-alloc-3: oklch(0.7 0.14 285);
+    --color-alloc-4: oklch(0.62 0.15 285);
+    --color-alloc-5: oklch(0.54 0.15 285);
   }
 }
 
