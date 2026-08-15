@@ -9,11 +9,11 @@ export default function ImportPositionsPage() {
   return (
     <section className="space-y-4">
       <Link
-        href="/settings"
+        href="/assets"
         className="inline-flex items-center gap-1 text-sm text-[var(--color-ink-muted)]"
       >
         <ChevronLeft aria-hidden className="size-4" />
-        Ajustes
+        Patrimônio
       </Link>
 
       <div>

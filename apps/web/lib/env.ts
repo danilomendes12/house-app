@@ -13,7 +13,7 @@
 function required(name: string, value: string | undefined): string {
   if (!value) {
     throw new Error(
-      `Missing environment variable ${name}. Copy .env.example to apps/web/.env.local and fill it in.`,
+      `Missing environment variable ${name}. It comes from deploy/.env — start the app with \`pnpm dev\`.`,
     );
   }
   return value;
@@ -27,10 +27,6 @@ export const serverEnv = {
   /** Anon key. The client runs as the logged-in user, so RLS is what actually authorizes. */
   get supabaseAnonKey(): string {
     return required('SUPABASE_ANON_KEY', process.env.SUPABASE_ANON_KEY);
-  },
-  /** The e-mail of the household owner. Also enforced in the database (see migrations). */
-  get ownerEmail(): string {
-    return required('OWNER_EMAIL', process.env.OWNER_EMAIL);
   },
   get supabaseServiceRoleKey(): string {
     return required('SUPABASE_SERVICE_ROLE_KEY', process.env.SUPABASE_SERVICE_ROLE_KEY);

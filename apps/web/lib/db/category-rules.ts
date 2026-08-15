@@ -32,17 +32,24 @@ export async function listCategoryRules(): Promise<CategoryRule[]> {
   );
 }
 
-export async function createCategoryRule(input: CategoryRuleInput): Promise<void> {
+/** @returns the id of the new rule, which the caller needs to apply it to the queue. */
+export async function createCategoryRule(input: CategoryRuleInput): Promise<string> {
   const { supabase, userId, householdId } = await authedClient();
 
-  const { error } = await supabase.from('category_rules').insert({
-    household_id: householdId,
-    user_id: userId,
-    matcher: input.matcher,
-    category_id: input.categoryId,
-    priority: input.priority,
-  });
+  const { data, error } = await supabase
+    .from('category_rules')
+    .insert({
+      household_id: householdId,
+      user_id: userId,
+      matcher: input.matcher,
+      category_id: input.categoryId,
+      priority: input.priority,
+    })
+    .select('id')
+    .single();
   if (error) throw error;
+
+  return data.id;
 }
 
 export async function updateCategoryRule(id: string, input: CategoryRuleInput): Promise<void> {

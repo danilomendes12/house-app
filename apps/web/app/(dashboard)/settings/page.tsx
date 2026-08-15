@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ChevronRight, FileUp, Inbox, Landmark, Shapes, Wand2 } from 'lucide-react';
+import { ChevronRight, Inbox, Shapes, Wand2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cardClass } from '@/components/fields';
 import { countUncategorizedTransactions } from '@/lib/db/transactions';
@@ -9,19 +9,9 @@ export const metadata = { title: 'Ajustes · Finanças' };
 export default async function SettingsPage() {
   const pending = await countUncategorizedTransactions();
 
+  // No import entry here on purpose: each upload lives in the tab it feeds — the credit-card
+  // CSV in Extrato, the XP position in Patrimônio.
   const items: { href: string; label: string; hint: string; icon: LucideIcon; badge?: number }[] = [
-    {
-      href: '/import',
-      label: 'Importar fatura',
-      hint: 'CSV do Nubank, sem duplicar nada',
-      icon: FileUp,
-    },
-    {
-      href: '/import/investments',
-      label: 'Importar investimentos',
-      hint: 'Posição consolidada da XP',
-      icon: Landmark,
-    },
     {
       href: '/uncategorized',
       label: 'A categorizar',

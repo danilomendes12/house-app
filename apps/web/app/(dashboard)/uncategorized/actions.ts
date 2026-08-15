@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { createCategoryRule } from '@/lib/db/category-rules';
-import { applyMatcherToUncategorized, setTransactionCategory } from '@/lib/db/transactions';
+import { setTransactionCategory } from '@/lib/db/transactions';
+import { applyRuleToQueue } from '@/lib/rules';
 
 export type QueueState =
   | { status: 'idle' }
@@ -38,8 +39,8 @@ export async function categorizeTransaction(
 
     let ruleApplied = 0;
     if (wantsRule) {
-      await createCategoryRule({ matcher, categoryId, priority: 0 });
-      ruleApplied = await applyMatcherToUncategorized(matcher, categoryId);
+      const ruleId = await createCategoryRule({ matcher, categoryId, priority: 0 });
+      ruleApplied = await applyRuleToQueue(ruleId);
     }
 
     revalidatePath('/', 'layout');

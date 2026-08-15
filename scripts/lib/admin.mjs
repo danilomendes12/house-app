@@ -9,27 +9,29 @@ import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-/** Reads apps/web/.env.local, if present. Env vars already set take precedence. */
+/**
+ * Reads deploy/.env — the only env file in the repository. Variables already set in the
+ * environment win, which is what lets these scripts point at another installation.
+ */
 export function loadLocalEnv() {
-  const envFile = resolve(process.cwd(), 'apps/web/.env.local');
+  const envFile = resolve(process.cwd(), 'deploy/.env');
   if (existsSync(envFile)) process.loadEnvFile(envFile);
 }
 
 /**
- * Supabase endpoint and credentials. Both are server-only: `SUPABASE_URL` points at the
- * internal API in production, so these scripts run on the VM or through a tunnel.
+ * Supabase endpoint and credentials. All server-only: these scripts hold the service role
+ * key, which is what lets them write `allowed_emails` and create users at all.
  */
-export function readConfig({ requireOwner = false } = {}) {
+export function readConfig() {
   loadLocalEnv();
 
   const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const ownerEmail = process.env.OWNER_EMAIL?.trim().toLowerCase();
 
-  if (!url || !serviceRoleKey || (requireOwner && !ownerEmail)) {
+  if (!url || !serviceRoleKey) {
     console.error(
-      'Missing SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY or OWNER_EMAIL.\n' +
-        'Set them in apps/web/.env.local (see .env.example).',
+      'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.\n' +
+        'They live in deploy/.env, written on the first `pnpm dev` (see deploy/.env.example).',
     );
     process.exit(1);
   }
@@ -40,7 +42,33 @@ export function readConfig({ requireOwner = false } = {}) {
     'Content-Type': 'application/json',
   };
 
-  return { url, headers, ownerEmail };
+  return { url, headers };
+}
+
+/**
+ * The household an invited person joins.
+ *
+ * Derived from the database rather than from an e-mail kept in a config file: after
+ * `db:owner`, the installation *has* an owner, and the row in `households` is that fact.
+ * `provision_user` fires on insert into auth.users, so it exists from that moment.
+ *
+ * Two or more households means the answer is genuinely ambiguous, and guessing is what
+ * SPEC §12 rejected — so this stops and asks instead. Failing loudly is the difference
+ * between "the household that happens to exist" and a silent leak between houses.
+ */
+export async function soleHouseholdId(config) {
+  const rows = await apiGet(config, '/rest/v1/households?select=id&limit=2');
+
+  if (rows.length === 0) {
+    throw new Error('no household yet — run `pnpm db:owner <email>` first');
+  }
+  if (rows.length > 1) {
+    throw new Error(
+      'this installation has more than one household, so which one to join is ambiguous.\n' +
+        'Pass it explicitly: HOUSEHOLD_ID=<uuid> pnpm db:invite <email>',
+    );
+  }
+  return rows[0].id;
 }
 
 export async function apiGet({ url, headers }, path) {

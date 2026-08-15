@@ -62,6 +62,24 @@ export function categorize(description: string, rules: readonly CategoryRule[]):
 }
 
 /**
+ * The rows that a single rule — `ruleId`, already part of `rules` — would categorize.
+ *
+ * Used to apply a just-saved rule to the "a categorizar" queue. The whole rule set takes
+ * part in the decision, not only the new matcher: creating "uber → Transporte" must not
+ * steal the pending "UBER EATS" rows from a more specific rule that already existed. Rows
+ * won by another rule are left alone; they were already in the queue before this rule.
+ */
+export function rowsMatchedByRule<R extends { id: string; description: string }>(
+  rows: readonly R[],
+  rules: readonly CategoryRule[],
+  ruleId: string,
+): R[] {
+  const sorted = sortRules(rules);
+
+  return rows.filter((row) => matchRule(row.description, sorted)?.id === ruleId);
+}
+
+/**
  * A matcher suggested from a description, for the "criar regra" checkbox in the queue.
  *
  * Statement titles carry noise that must not end up in the rule — an instalment suffix, a

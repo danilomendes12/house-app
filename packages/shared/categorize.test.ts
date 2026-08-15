@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { categorize, matchRule, sortRules, suggestMatcher, type CategoryRule } from './categorize';
+import {
+  categorize,
+  matchRule,
+  rowsMatchedByRule,
+  sortRules,
+  suggestMatcher,
+  type CategoryRule,
+} from './categorize';
 
 function rule(id: string, matcher: string, categoryId: string, priority = 0): CategoryRule {
   return { id, matcher, categoryId, priority };
@@ -67,6 +74,38 @@ describe('categorize', () => {
     const unsorted = [rule('r1', 'uber', 'transporte'), rule('r2', 'uber eats', 'restaurantes')];
 
     expect(categorize('Uber Eats', unsorted)).toBe('restaurantes');
+  });
+});
+
+describe('rowsMatchedByRule', () => {
+  const pending = [
+    { id: 't1', description: 'CORRIDA UBER 4821' },
+    { id: 't2', description: 'UBER EATS SP' },
+    { id: 't3', description: 'Pão de Açúcar' },
+    { id: 't4', description: 'Farmácia Onofre' },
+  ];
+
+  it('returns the queued rows the rule would categorize', () => {
+    const rules = [rule('r1', 'uber', 'transporte'), rule('r3', 'pao de acucar', 'mercado')];
+
+    expect(rowsMatchedByRule(pending, rules, 'r1').map((row) => row.id)).toEqual(['t1', 't2']);
+  });
+
+  it('matches without accents, like the import does', () => {
+    const rules = [rule('r3', 'Pão de Açúcar', 'mercado')];
+
+    expect(rowsMatchedByRule(pending, rules, 'r3').map((row) => row.id)).toEqual(['t3']);
+  });
+
+  it('leaves rows won by a more specific rule to that rule', () => {
+    const rules = [rule('r1', 'uber', 'transporte'), rule('r2', 'uber eats', 'restaurantes')];
+
+    expect(rowsMatchedByRule(pending, rules, 'r1').map((row) => row.id)).toEqual(['t1']);
+    expect(rowsMatchedByRule(pending, rules, 'r2').map((row) => row.id)).toEqual(['t2']);
+  });
+
+  it('returns nothing for a rule outside the set', () => {
+    expect(rowsMatchedByRule(pending, [rule('r1', 'uber', 'transporte')], 'ghost')).toEqual([]);
   });
 });
 

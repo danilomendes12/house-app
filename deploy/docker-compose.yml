@@ -1,59 +1,38 @@
-# Self-hosted stack (SPEC §5.3). Run from this directory:
+# The stack: Postgres + GoTrue + PostgREST behind Caddy. This is Supabase, self-hosted —
+# the same pieces the hosted product runs, minus everything the app does not use.
 #
-#   node ../scripts/gen-secrets.mjs   # writes .env — do this once
-#   docker compose up -d db auth      # auth creates auth.users
-#   pnpm exec supabase db push --db-url "$DATABASE_URL"
-#   docker compose up -d              # then the rest
+# Driven by `pnpm dev` (scripts/stack.mjs), which also generates the secrets, pushes the
+# migrations and provisions the owner. Running it by hand is possible once those are done:
+#
+#   docker compose up -d --wait          # db + auth + rest + caddy
+#   docker compose --profile studio up -d   # plus the database UI
+#   docker compose --profile prod up -d     # plus the app's production build
 #
 # Every `${VAR:?}` is deliberate: nothing here has a default, so the stack refuses to start
-# with a missing secret instead of falling back to the Supabase CLI's public demo keys.
+# with a missing secret instead of silently falling back to the Supabase CLI's public demo
+# keys.
 #
-# Not here on purpose: Kong (the API is not public), Studio (a database admin panel on the
-# VM is the opposite of what this is for), Realtime, Storage, imgproxy, Logflare and
-# Supavisor (the app uses none of them).
+# Not here on purpose: Kong (the API is not public — Caddy routes it), Realtime, Storage,
+# imgproxy, Logflare and Supavisor (the app uses none of them).
 
 name: financas
 
 services:
-  # The only service with published ports. TLS, and the router that keeps Supabase's API
-  # inside the network — see Caddyfile.
+  # Gives the API a single origin. `supabase-js` is built around one base URL with
+  # /auth/v1/* and /rest/v1/* under it, and those are two different containers — this is
+  # what joins them, and it is what replaces Kong. See Caddyfile.
+  #
+  # Loopback only: unreachable from another machine. It is published at all because the
+  # Next dev server runs on the host, not in the network.
   caddy:
     image: caddy:2.10.2-alpine
     restart: unless-stopped
     ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
-      # The internal API block, on loopback only: unreachable from outside the VM, and the
-      # way `pnpm db:owner` / `db:invite` / `db:password` reach GoTrue over an SSH tunnel.
       - '127.0.0.1:${SUPABASE_API_PORT:-8000}:8000'
-    environment:
-      DOMAIN: ${DOMAIN:?}
-      TLS_EMAIL: ${TLS_EMAIL:?}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-
-  web:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: financas-web:local
-    restart: unless-stopped
-    environment:
-      # The internal Caddy block, not a public URL: the browser never talks to Supabase.
-      SUPABASE_URL: http://caddy:8000
-      SUPABASE_ANON_KEY: ${ANON_KEY:?}
-      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?}
-      OWNER_EMAIL: ${OWNER_EMAIL:?}
-    depends_on:
-      auth:
-        condition: service_healthy
-      rest:
-        condition: service_healthy
-      caddy:
-        condition: service_started
 
   # supabase/postgres, not plain postgres: the migrations need the `auth` schema, auth.uid()
   # and the anon / authenticated / service_role / authenticator roles, and this image
@@ -68,8 +47,7 @@ services:
       - db-data:/var/lib/postgresql/data
       # Mounted file by file: the entrypoint ignores subdirectories of initdb.d.
       - ./init/zz-role-passwords.sql:/docker-entrypoint-initdb.d/zz-role-passwords.sql:ro
-    # Loopback only: unreachable from outside the VM. It is published at all so that
-    # `supabase db push` and the restore procedure can reach it over an SSH tunnel.
+    # Loopback only. Published so `supabase db push` and `gen types` reach it from the host.
     ports:
       - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     healthcheck:
@@ -79,9 +57,10 @@ services:
       retries: 12
       start_period: 60s
 
-  # GoTrue. It owns the `auth` schema and runs its own migrations at boot — which is why it
-  # has to be healthy *before* `supabase db push`: our first migration puts a trigger on
-  # auth.users, a table that does not exist until this service has started once.
+  # GoTrue — this *is* Supabase Auth. It owns the `auth` schema and runs its own migrations
+  # at boot, which is why it has to be healthy *before* `supabase db push`: our first
+  # migration puts a trigger on auth.users, a table that does not exist until this service
+  # has started once.
   auth:
     image: supabase/gotrue:v2.194.0
     restart: unless-stopped
@@ -93,10 +72,10 @@ services:
       GOTRUE_API_PORT: '9999'
       # Internal address; there are no e-mail links to build.
       API_EXTERNAL_URL: http://caddy:8000/auth/v1
-      GOTRUE_SITE_URL: https://${DOMAIN:?}
+      GOTRUE_SITE_URL: http://localhost:${WEB_PORT:-3000}
       GOTRUE_DB_DRIVER: postgres
       GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?}@db:5432/postgres
-      # Must be the very secret that signed ANON_KEY and SERVICE_ROLE_KEY. If these three
+      # Must be the very secret that signed the two SUPABASE_*_KEY values. If these three
       # ever drift apart the only symptom is a bare 401.
       GOTRUE_JWT_SECRET: ${JWT_SECRET:?}
       GOTRUE_JWT_EXP: '3600'
@@ -115,7 +94,7 @@ services:
       # ever sent, and no user waits for a confirmation that would never arrive.
       GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
       GOTRUE_MAILER_AUTOCONFIRM: 'true'
-      # Keep in sync with minimum_password_length in supabase/config.toml.
+      # There is no recovery flow (SPEC §12), so the password is the whole door.
       GOTRUE_PASSWORD_MIN_LENGTH: '12'
       GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: 'true'
       GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: 'true'
@@ -128,8 +107,9 @@ services:
       retries: 10
       start_period: 30s
 
-  # PostgREST connects as `authenticator`, which owns nothing and can only become the role
-  # named in the JWT — never as a superuser.
+  # PostgREST — this *is* the Supabase REST API, the one supabase-js talks to and where RLS
+  # is enforced. It connects as `authenticator`, which owns nothing and can only become the
+  # role named in the JWT — never as a superuser.
   rest:
     image: postgrest/postgrest:v14.15
     restart: unless-stopped
@@ -159,23 +139,75 @@ services:
       retries: 10
       start_period: 30s
 
-  # A VPS has no snapshot fairy: this is the only copy of the data that survives the disk.
-  backup:
-    image: postgres:17.7-alpine
+  # The app's production build, under a profile: the everyday flow runs Next on the host
+  # with hot reload (`pnpm dev`) against the same services. This is the smoke test of the
+  # thing that will actually ship — `pnpm stack prod`.
+  web:
+    profiles: ['prod']
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: financas-web:local
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    environment:
+      # The container reaches the API by service name; the host reaches it on loopback.
+      SUPABASE_URL: http://caddy:8000
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?}
+    depends_on:
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_healthy
+      caddy:
+        condition: service_started
+
+  # The database UI, also under a profile — `pnpm stack studio`. Off by default because it
+  # is a browsing tool, not part of the app: nothing depends on it being up.
+  studio:
+    profiles: ['studio']
+    image: supabase/studio:2026.07.27-sha-cbb076d
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${STUDIO_PORT:-54323}:3000'
+    environment:
+      # The image's own healthcheck fetches 127.0.0.1:3000; without this Next binds to the
+      # container hostname instead and the container never turns healthy.
+      HOSTNAME: 0.0.0.0
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      DEFAULT_ORGANIZATION_NAME: Casa
+      DEFAULT_PROJECT_NAME: financas
+      SUPABASE_URL: http://caddy:8000
+      SUPABASE_PUBLIC_URL: http://127.0.0.1:${SUPABASE_API_PORT:-8000}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:?}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?}
+      AUTH_JWT_SECRET: ${JWT_SECRET:?}
+
+  # Studio reads and writes the schema through this, not through PostgREST.
+  meta:
+    profiles: ['studio']
+    image: supabase/postgres-meta:v0.96.6
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
-      PGPASSWORD: ${POSTGRES_PASSWORD:?}
-      RETENTION_DAYS: '14'
-    volumes:
-      - ./backup.sh:/backup.sh:ro
-      - backups:/backups
-    entrypoint: ['/bin/sh', '/backup.sh']
+      PG_META_PORT: '8080'
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: '5432'
+      PG_META_DB_NAME: postgres
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:?}
 
 volumes:
   db-data:
-  backups:
   caddy-data:
   caddy-config:

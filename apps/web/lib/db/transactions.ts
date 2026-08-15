@@ -100,29 +100,38 @@ export async function setTransactionCategory(id: string, categoryId: string): Pr
 }
 
 /**
- * Applies a matcher to the rows still waiting in the queue — what "criar regra" does after
- * saving the rule, so an existing backlog gets cleared instead of only future imports
- * benefiting (SPEC §9).
- *
- * `ilike` with an escaped pattern is the SQL equivalent of the case-insensitive substring
- * test in `matchRule`. It is not accent-insensitive the way the shared helper is, so it
- * catches a subset — the queue is the safety net for whatever it misses.
+ * Every queued row reduced to what rule matching needs — the whole queue, without the
+ * display limit of {@link listUncategorizedTransactions}: applying a rule must not stop at
+ * the 200 most recent rows.
+ */
+export async function listUncategorizedForMatching(): Promise<
+  { id: string; description: string }[]
+> {
+  const { supabase } = await authedClient();
+
+  return unwrap(
+    await supabase.from('transactions').select('id, description').is('category_id', null),
+  );
+}
+
+/**
+ * Sets the category of a batch of transactions at once — the write half of applying a rule
+ * to the queue.
  *
  * @returns how many transactions were categorized.
  */
-export async function applyMatcherToUncategorized(
-  matcher: string,
+export async function setTransactionsCategory(
+  ids: readonly string[],
   categoryId: string,
 ): Promise<number> {
-  const { supabase } = await authedClient();
+  if (ids.length === 0) return 0;
 
-  const pattern = `%${matcher.replace(/([\\%_])/g, '\\$1')}%`;
+  const { supabase } = await authedClient();
 
   const { data, error } = await supabase
     .from('transactions')
     .update({ category_id: categoryId })
-    .is('category_id', null)
-    .ilike('description', pattern)
+    .in('id', [...ids])
     .select('id');
   if (error) throw error;
 

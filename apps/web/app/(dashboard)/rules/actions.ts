@@ -6,7 +6,7 @@ import {
   deleteCategoryRule,
   updateCategoryRule,
 } from '@/lib/db/category-rules';
-import { applyMatcherToUncategorized } from '@/lib/db/transactions';
+import { applyRuleToQueue } from '@/lib/rules';
 
 export type RuleFormState =
   { status: 'idle' } | { status: 'error'; message: string } | { status: 'done'; applied: number };
@@ -17,8 +17,9 @@ function parsePriority(value: FormDataEntryValue | null): number {
 }
 
 /**
- * Creates a rule and immediately applies it to the queue — a rule that only affects future
+ * Saves a rule and immediately applies it to the queue — a rule that only affects future
  * imports would leave the user categorizing by hand the very backlog they wrote it for.
+ * Editing counts as saving: a corrected matcher is worth as much on the backlog as a new one.
  */
 export async function saveRule(
   _previous: RuleFormState,
@@ -33,14 +34,14 @@ export async function saveRule(
   if (!categoryId) return { status: 'error', message: 'Escolha uma categoria.' };
 
   try {
-    if (id) {
-      await updateCategoryRule(id, { matcher, categoryId, priority });
-      revalidatePath('/', 'layout');
-      return { status: 'done', applied: 0 };
+    let ruleId = id;
+    if (ruleId) {
+      await updateCategoryRule(ruleId, { matcher, categoryId, priority });
+    } else {
+      ruleId = await createCategoryRule({ matcher, categoryId, priority });
     }
 
-    await createCategoryRule({ matcher, categoryId, priority });
-    const applied = await applyMatcherToUncategorized(matcher, categoryId);
+    const applied = await applyRuleToQueue(ruleId);
 
     revalidatePath('/', 'layout');
     return { status: 'done', applied };

@@ -7,8 +7,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "pnpm --filter @finance/web dev",
-    "dev:local": "node scripts/dev-up.mjs",
+    "dev": "node scripts/stack.mjs dev",
+    "stack": "node scripts/stack.mjs",
     "build": "pnpm --filter @finance/web build",
     "build:icons": "node scripts/build-icons.mjs",
     "start": "pnpm --filter @finance/web start",
@@ -18,7 +18,6 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:reset": "supabase db reset",
     "db:owner": "node scripts/create-owner.mjs",
     "db:invite": "node scripts/invite-member.mjs",
     "db:password": "node scripts/set-password.mjs"

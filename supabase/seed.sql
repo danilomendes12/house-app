@@ -1,6 +1,8 @@
--- Seed data applied by `supabase db reset`.
+-- Seed data, applied on a fresh database by `pnpm dev` (--include-seed on the first push).
 --
--- The owner's e-mail is not seeded here on purpose: it is environment-specific and lives
--- in OWNER_EMAIL. After a reset, run `pnpm db:owner` to allowlist it and create the user.
+-- The owner's e-mail is not seeded here on purpose: it is installation-specific and lives
+-- in OWNER_EMAIL. `pnpm dev` runs `pnpm db:owner` right after, which allowlists it and
+-- creates the user.
 --
--- Phase 1 adds the default expense categories below.
+-- Default categories are not here either: they are seeded per household by the
+-- `seed_default_categories` trigger, which is the only place that knows the household id.

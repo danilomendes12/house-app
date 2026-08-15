@@ -1,180 +1,113 @@
-# Deploy — VM própria com `docker compose`
+# A stack
 
-Stack self-hosted do app: Next.js + Postgres + GoTrue + PostgREST atrás do Caddy, sem
-Vercel e sem Supabase hospedado. Fonte da verdade das decisões: `docs/SPEC.md` §5.1, §5.3
-e §5.4.
+Postgres + GoTrue + PostgREST atrás do Caddy, em `docker compose`. **Isto é o Supabase** —
+as mesmas peças que o produto hospedado roda, self-hosted, menos tudo que o app não usa.
 
-| Serviço  | Imagem                         | Publica                    | Papel                                 |
-| -------- | ------------------------------ | -------------------------- | ------------------------------------- |
-| `caddy`  | `caddy:2.10.2-alpine`          | **80/443** + `:8000` local | TLS automático, proxy do app e da API |
-| `web`    | build local (`../Dockerfile`)  | —                          | Next.js standalone                    |
-| `db`     | `supabase/postgres:17.6.1.156` | `5432` só em loopback      | Postgres, schema `auth` e roles       |
-| `auth`   | `supabase/gotrue:v2.194.0`     | —                          | `/auth/v1/*`                          |
-| `rest`   | `postgrest/postgrest:v14.15`   | —                          | `/rest/v1/*`                          |
-| `backup` | `postgres:17.7-alpine`         | —                          | `pg_dump` diário, 14 dias de retenção |
+Você não sobe nada daqui à mão: quem dirige é o `pnpm dev`, da raiz do repositório. Este
+documento existe para quando algo quebrar e você precisar saber o que é cada container.
 
-As tags são as **mesmas** que a Supabase CLI usa no stack local — dev e produção rodam o
-mesmo Postgres e o mesmo GoTrue, e nenhuma imagem é `latest`.
+| Serviço  | Imagem                         | Publica             | Papel                                                                                       |
+| -------- | ------------------------------ | ------------------- | ------------------------------------------------------------------------------------------- |
+| `db`     | `supabase/postgres:17.6.1.156` | `5432` em loopback  | Postgres, schema `auth`, roles `anon`/`authenticated`/`service_role`                        |
+| `auth`   | `supabase/gotrue:v2.194.0`     | —                   | **é o Supabase Auth**: guarda `auth.users`, valida a senha, emite o JWT                     |
+| `rest`   | `postgrest/postgrest:v14.15`   | —                   | **é a API REST do Supabase**: é com ela que o `supabase-js` fala, e é onde a RLS é aplicada |
+| `caddy`  | `caddy:2.10.2-alpine`          | `8000` em loopback  | dá uma origem única às duas acima                                                           |
+| `studio` | `supabase/studio`              | `54323` em loopback | UI do banco. Profile `studio`, desligado por padrão                                         |
+| `meta`   | `supabase/postgres-meta`       | —                   | como o Studio lê e escreve o schema. Profile `studio`                                       |
+| `web`    | build local (`../Dockerfile`)  | `3000` em loopback  | build de produção do Next. Profile `prod`, desligado por padrão                             |
 
-Só a porta 80/443 fica exposta na VM. A API do Supabase (`:8000`) e o Postgres (`5432`)
-escutam apenas em `127.0.0.1`: são acesso de manutenção, alcançáveis de fora só por túnel
-SSH. Quem fala com a API é o container `web`, pela rede interna do Docker — o browser
-nunca fala com o Supabase, e é por isso que não existe Kong aqui.
+Nenhuma porta sai de `127.0.0.1`, e nenhuma imagem é `latest`.
 
-## Pré-requisitos
+## Por que o Caddy existe
 
-- Uma VM com Docker e Docker Compose, e o repositório clonado nela (a imagem do app é
-  construída localmente).
-- Um **domínio** apontando para o IP da VM. Com domínio o Caddy emite o certificado
-  sozinho, e é o HTTPS que devolve o _secure context_ sem o qual o service worker da PWA
-  não registra (o iPhone não instala o app).
-- Na sua máquina de desenvolvimento: Node e pnpm, para rodar as migrations e o
-  provisionamento. Nada disso precisa estar na VM.
+O `supabase-js` é construído em torno de **uma** URL base: ele chama `/auth/v1/token` e
+`/rest/v1/<tabela>` embaixo dela. Só que essas duas rotas são dois containers diferentes.
+O Caddy é o que junta os dois em `:8000` — e é o que substitui o **Kong**, o gateway
+oficial do Supabase.
 
-## Instalação
+Kong existe para key-auth, CORS e rate limit de uma API _pública_. Aqui a API não é
+pública: quem fala com ela é o servidor Next, o role `anon` não tem grant nenhum (as
+migrations revogam tudo) e o PostgREST valida o JWT sozinho. Sobrou roteamento de prefixo,
+que o Caddy faz em 12 linhas.
 
-### 1. Segredos
+## Como o app acha a API
 
-```bash
-node scripts/gen-secrets.mjs        # escreve deploy/.env (modo 600)
-```
+O mesmo endereço tem dois nomes, e a diferença é de onde você olha:
 
-Preencha `DOMAIN`, `TLS_EMAIL` e `OWNER_EMAIL`. Os quatro valores gerados
-(`POSTGRES_PASSWORD`, `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`) **não** se editam à
-mão: as duas chaves são JWTs assinados com o `JWT_SECRET`, e se os três divergirem o
-sintoma é um 401 sem explicação. Guarde o arquivo em algum lugar seguro; ele não é
-recuperável e não vai para o git.
+| Quem                                | `SUPABASE_URL`          |
+| ----------------------------------- | ----------------------- |
+| `pnpm dev` (Next no host)           | `http://127.0.0.1:8000` |
+| container `web` (`pnpm stack prod`) | `http://caddy:8000`     |
 
-Nunca use as chaves do stack local da CLI: elas são **fixas e públicas**, iguais em toda
-instalação. Expostas, qualquer pessoa forja um token `service_role` e a RLS inteira vira
-decoração.
+O browser nunca fala com nenhum dos dois. Todo acesso a dados é Server Component, Server
+Action ou Route Handler — é por isso que não existe var `NEXT_PUBLIC_*` neste projeto.
 
-### 2. Banco e autenticação, nessa ordem
+## Segredos
 
-```bash
-cd deploy
-docker compose up -d db auth
-docker compose ps          # espere `auth` ficar (healthy)
-```
+`deploy/.env`, escrito por `scripts/gen-secrets.mjs` na primeira subida. É o **único**
+arquivo de env do repositório: o compose lê dele, e o `pnpm dev` passa os três valores
+`SUPABASE_*` para o Next que ele inicia.
 
-A ordem importa: o GoTrue cria a tabela `auth.users` nas migrations dele, e a nossa
-primeira migration põe um trigger **em cima dessa tabela**. Subir tudo de uma vez faria o
-`db push` do próximo passo falhar.
+Só segredos e portas. Quem é o dono da instalação não está aqui — isso é fato do banco,
+escrito uma vez por `pnpm db:owner <email>` (SPEC §12).
 
-### 3. Migrations
+Os quatro valores gerados (`POSTGRES_PASSWORD`, `JWT_SECRET`, `SUPABASE_ANON_KEY`,
+`SUPABASE_SERVICE_ROLE_KEY`) **não se editam à mão**: as duas chaves são JWTs assinados com
+o `JWT_SECRET`, e se os três divergirem o único sintoma é um 401 sem explicação.
 
-Rodadas da sua máquina, com a Supabase CLI — que continua sendo a única dona do schema.
-Abra o túnel para as portas de manutenção:
+Nunca reaproveite as chaves do stack local da Supabase CLI: elas são **fixas e públicas**,
+iguais em toda instalação. Em qualquer coisa alcançável de fora da máquina, qualquer pessoa
+forja um token `service_role` e a RLS inteira vira decoração. Nenhuma variável do compose
+tem default — o stack se recusa a subir sem elas em vez de cair nas chaves públicas.
 
-```bash
-ssh -L 5432:127.0.0.1:5432 -L 8000:127.0.0.1:8000 usuario@vm
-```
+## Ordem de subida
 
-e, em outro terminal, na raiz do repositório:
-
-```bash
-pnpm exec supabase db push \
-  --db-url "postgresql://postgres:$POSTGRES_PASSWORD@127.0.0.1:5432/postgres?sslmode=disable"
-```
-
-`sslmode=disable` é obrigatório: o Postgres do compose não fala TLS, e quem cifra o
-caminho é o túnel SSH.
-
-### 4. Resto do stack
-
-```bash
-docker compose up -d       # constrói a imagem do app na primeira vez
-```
-
-### 5. Usuários
-
-Com o túnel aberto, da raiz do repositório:
-
-```bash
-SUPABASE_URL=http://127.0.0.1:8000 \
-SUPABASE_SERVICE_ROLE_KEY=<SERVICE_ROLE_KEY do deploy/.env> \
-OWNER_EMAIL=voce@exemplo.com \
-  pnpm db:owner
-
-# depois, a segunda pessoa (a ordem importa: o convite lê o household do dono)
-SUPABASE_URL=http://127.0.0.1:8000 \
-SUPABASE_SERVICE_ROLE_KEY=<...> OWNER_EMAIL=voce@exemplo.com \
-  pnpm db:invite namorada@exemplo.com
-```
-
-Cada script imprime **uma vez** a senha gerada. Anote na hora: ela não é recuperável, e
-não existe "esqueci minha senha" na UI — o reset é `pnpm db:password <email>`, com as
-mesmas variáveis acima.
-
-Pronto: `https://<DOMAIN>` pede e-mail e senha.
-
-## Atualizar o app
-
-```bash
-git pull
-docker compose up -d --build web
-```
-
-Se a atualização trouxer migrations novas, rode o passo 3 antes (com o túnel aberto).
-
-## Backup e restore
-
-O serviço `backup` roda um `pg_dump` completo (schema + dados, `public` e `auth`) ao subir
-e a cada 24 h, no volume `backups`, apagando o que passa de 14 dias. Para copiar um dump
-para fora da VM — que é o que o transforma em backup de verdade:
-
-```bash
-docker compose cp backup:/backups/financas-2026-08-15.sql.gz .
-```
-
-### Restore
-
-Testado. Restaura em um banco **vazio** — o dump traz o schema inteiro, inclusive os
-usuários, então nada precisa ser provisionado de novo:
-
-```bash
-docker compose down
-docker volume rm financas_db-data      # o banco vai embora aqui; tenha o dump em mãos
-docker compose up -d db                # a imagem recria roles e schema base
-docker compose ps                      # espere (healthy)
-
-gunzip -c financas-2026-08-15.sql.gz | docker compose exec -T db psql -U supabase_admin -d postgres
-
-docker compose up -d
-```
-
-O restore é como `supabase_admin` (superusuário) porque o schema `auth` pertence a ele;
-como `postgres` a restauração falha em centenas de objetos. O dump, esse sim, é feito como
-`postgres` — é o menor privilégio que dá conta.
-
-Depois do restore não rode `db push` nem `db:owner`: o dump já contém as migrations
-aplicadas e os usuários, com as senhas que eles já usavam.
+`db` → `auth` saudável → migrations → resto. Não é preferência: o GoTrue cria a tabela
+`auth.users` nas migrations _dele_, e a nossa primeira migration põe um trigger em cima
+dessa tabela. Subir tudo de uma vez faz o `db push` falhar. O `pnpm dev` respeita isso em
+duas fases.
 
 ## Operação
 
 ```bash
-docker compose ps                  # saúde de cada serviço
-docker compose logs -f web         # ou auth, rest, caddy, backup
-docker compose restart web
-docker compose down                # dados ficam nos volumes nomeados
+pnpm stack logs [serviço]   # db, auth, rest, caddy, studio, web
+pnpm stack down             # para tudo (os dados ficam no volume nomeado)
+pnpm stack reset            # para e apaga o banco
+docker compose exec db psql -U postgres   # daqui, quando o Studio for demais
 ```
 
-Volumes: `db-data` (Postgres), `backups` (dumps), `caddy-data` (certificados),
-`caddy-config`. `docker compose down` sem `-v` preserva todos.
+Volumes: `db-data` (Postgres), `caddy-data`, `caddy-config`. `pnpm stack down` preserva
+todos; só o `reset` apaga.
 
 ## Armadilhas
 
-- **`POSTGRES_PASSWORD` só vale na primeira subida.** `init/zz-role-passwords.sql` roda
-  uma única vez, com o volume vazio. Trocar a senha no `.env` depois disso deixa o `.env` e
-  o banco discordando, e o GoTrue para de conectar. Para trocar de verdade:
-  `ALTER USER postgres/supabase_auth_admin/authenticator WITH PASSWORD '...'` no banco, e
-  só então no arquivo.
+- **`POSTGRES_PASSWORD` só vale na primeira subida.** `init/zz-role-passwords.sql` roda uma
+  única vez, com o volume vazio — a imagem `supabase/postgres` cria os roles mas **não** dá
+  senha a eles, e sem esse arquivo o GoTrue morre no boot com _password authentication
+  failed_. Trocar a senha no `.env` depois disso deixa arquivo e banco discordando. Para
+  trocar de verdade: `ALTER USER postgres/supabase_auth_admin/authenticator WITH PASSWORD
+'...'` no banco, e só então no arquivo.
 - **`JWT_SECRET` assina as duas chaves.** Regerar o `.env` invalida toda sessão ativa e
-  exige `docker compose up -d` em `auth`, `rest` e `web` ao mesmo tempo.
-- **Sem domínio, sem PWA.** Em LAN dá para trocar o bloco público do `Caddyfile` pelo IP e
-  usar `tls internal`, mas o certificado passa a ser autoassinado: o browser avisa a cada
-  visita e o iOS não instala a PWA (o service worker exige secure context). Para acessar de
-  fora sem abrir porta no roteador, **Tailscale** resolve melhor do que port forwarding: a
-  VM ganha um nome estável na sua rede privada e o Caddy continua com `tls internal`.
-- **Nada de Studio em produção.** Um painel de administração do banco exposto na VM é o
-  oposto do que este deploy quer. Para inspecionar, `docker compose exec db psql -U postgres`.
+  exige subir `auth`, `rest` e `web` juntos de novo.
+- **A porta 3000 é disputada.** `pnpm dev` (Next no host) e `pnpm stack prod` (container
+  `web`) querem a mesma. Os dois avisam em vez de falhar torto; rode um de cada vez, ou
+  `WEB_PORT=3001 pnpm stack prod`.
+
+## O que **não** está aqui
+
+Nada disto existe hoje, e a ausência é deliberada — a hospedagem ainda não foi escolhida
+(SPEC §11, Q5), e configuração para uma infra inexistente é o que faz um repositório
+parecer que descreve outro projeto:
+
+- **Bloco público do Caddy, domínio e TLS.** Sem servidor não há certificado a emitir.
+  Quando houver, volta um bloco `{$DOMAIN} { reverse_proxy web:3000 }` e o `web` sai do
+  profile `prod`. Vale lembrar do custo de não ter domínio: sem HTTPS não há _secure
+  context_, e sem ele o service worker de `public/sw.js` não registra — o iPhone não
+  instala a PWA.
+- **Backup automático.** O `pg_dump` diário fazia sentido num VPS onde o disco é sua
+  responsabilidade. Na sua máquina, o backup é o Time Machine. Volta junto com o servidor,
+  e junto com o teste de restore — backup que nunca foi restaurado não é backup.
+- **Kong, Studio em produção, Realtime, Storage, imgproxy, Logflare, Supavisor.** O app não
+  usa nenhum. O Studio existe aqui como ferramenta de desenvolvimento, atrás de um profile;
+  num servidor ele seria um painel de administração do banco exposto, que é o oposto do que
+  este stack quer.
