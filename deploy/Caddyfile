@@ -1,0 +1,36 @@
+{
+	email {$TLS_EMAIL}
+}
+
+# --- public: the only thing published on the VM ------------------------------
+# Caddy gets the certificate from Let's Encrypt on its own, which is what gives the PWA a
+# secure context (without HTTPS the service worker in public/sw.js does not register).
+#
+# On a LAN with no domain, replace this block's address with the IP and add `tls internal`.
+# The certificate is then self-signed: browsers warn, and iOS will not install the PWA.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
+
+# --- internal: Supabase's API, reachable only inside the compose network ------
+# Not published in docker-compose.yml, so nothing outside the VM can reach it. This is what
+# SUPABASE_URL points at, and it replaces Kong: the API has no public surface to guard, the
+# `anon` role holds no grant (the migrations revoke everything) and PostgREST validates the
+# JWT by itself.
+#
+# Both services serve at the root, so the prefix has to be *removed* — `handle_path` does
+# that, `handle` would not. supabase-js calls /auth/v1/token and /rest/v1/<table>.
+:8000 {
+	handle_path /auth/v1/* {
+		reverse_proxy auth:9999
+	}
+
+	handle_path /rest/v1/* {
+		reverse_proxy rest:3000
+	}
+
+	handle {
+		respond "not found" 404
+	}
+}

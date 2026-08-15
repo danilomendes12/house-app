@@ -1,0 +1,181 @@
+# Self-hosted stack (SPEC §5.3). Run from this directory:
+#
+#   node ../scripts/gen-secrets.mjs   # writes .env — do this once
+#   docker compose up -d db auth      # auth creates auth.users
+#   pnpm exec supabase db push --db-url "$DATABASE_URL"
+#   docker compose up -d              # then the rest
+#
+# Every `${VAR:?}` is deliberate: nothing here has a default, so the stack refuses to start
+# with a missing secret instead of falling back to the Supabase CLI's public demo keys.
+#
+# Not here on purpose: Kong (the API is not public), Studio (a database admin panel on the
+# VM is the opposite of what this is for), Realtime, Storage, imgproxy, Logflare and
+# Supavisor (the app uses none of them).
+
+name: financas
+
+services:
+  # The only service with published ports. TLS, and the router that keeps Supabase's API
+  # inside the network — see Caddyfile.
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+      # The internal API block, on loopback only: unreachable from outside the VM, and the
+      # way `pnpm db:owner` / `db:invite` / `db:password` reach GoTrue over an SSH tunnel.
+      - '127.0.0.1:${SUPABASE_API_PORT:-8000}:8000'
+    environment:
+      DOMAIN: ${DOMAIN:?}
+      TLS_EMAIL: ${TLS_EMAIL:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  web:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: financas-web:local
+    restart: unless-stopped
+    environment:
+      # The internal Caddy block, not a public URL: the browser never talks to Supabase.
+      SUPABASE_URL: http://caddy:8000
+      SUPABASE_ANON_KEY: ${ANON_KEY:?}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?}
+      OWNER_EMAIL: ${OWNER_EMAIL:?}
+    depends_on:
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_healthy
+      caddy:
+        condition: service_started
+
+  # supabase/postgres, not plain postgres: the migrations need the `auth` schema, auth.uid()
+  # and the anon / authenticated / service_role / authenticator roles, and this image
+  # creates all of them on first boot. What it does *not* do is give them a password — that
+  # is init/zz-role-passwords.sql, and without it GoTrue cannot connect.
+  db:
+    image: supabase/postgres:17.6.1.156
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Mounted file by file: the entrypoint ignores subdirectories of initdb.d.
+      - ./init/zz-role-passwords.sql:/docker-entrypoint-initdb.d/zz-role-passwords.sql:ro
+    # Loopback only: unreachable from outside the VM. It is published at all so that
+    # `supabase db push` and the restore procedure can reach it over an SSH tunnel.
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'postgres', '-h', '127.0.0.1', '-p', '5432']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # GoTrue. It owns the `auth` schema and runs its own migrations at boot — which is why it
+  # has to be healthy *before* `supabase db push`: our first migration puts a trigger on
+  # auth.users, a table that does not exist until this service has started once.
+  auth:
+    image: supabase/gotrue:v2.194.0
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: '9999'
+      # Internal address; there are no e-mail links to build.
+      API_EXTERNAL_URL: http://caddy:8000/auth/v1
+      GOTRUE_SITE_URL: https://${DOMAIN:?}
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:?}@db:5432/postgres
+      # Must be the very secret that signed ANON_KEY and SERVICE_ROLE_KEY. If these three
+      # ever drift apart the only symptom is a bare 401.
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?}
+      GOTRUE_JWT_EXP: '3600'
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_ISSUER: http://caddy:8000/auth/v1
+      # Closed household (SPEC §5.4): the two users come from pnpm db:owner / db:invite,
+      # and public.allowed_emails rejects anyone else at the database level.
+      GOTRUE_DISABLE_SIGNUP: 'true'
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: 'false'
+      GOTRUE_EXTERNAL_PHONE_ENABLED: 'false'
+      GOTRUE_SECURITY_MANUAL_LINKING_ENABLED: 'false'
+      # The e-mail provider is what makes grant_type=password work. There is no SMTP host
+      # configured anywhere, and autoconfirm is what keeps that from mattering: no mail is
+      # ever sent, and no user waits for a confirmation that would never arrive.
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: 'true'
+      GOTRUE_MAILER_AUTOCONFIRM: 'true'
+      # Keep in sync with minimum_password_length in supabase/config.toml.
+      GOTRUE_PASSWORD_MIN_LENGTH: '12'
+      GOTRUE_SECURITY_UPDATE_PASSWORD_REQUIRE_REAUTHENTICATION: 'true'
+      GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: 'true'
+      GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: '10'
+      GOTRUE_LOG_LEVEL: info
+    healthcheck:
+      test: ['CMD-SHELL', 'wget --no-verbose --tries=1 --spider http://127.0.0.1:9999/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # PostgREST connects as `authenticator`, which owns nothing and can only become the role
+  # named in the JWT — never as a superuser.
+  rest:
+    image: postgrest/postgrest:v14.15
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD:?}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_EXTRA_SEARCH_PATH: public,extensions
+      PGRST_DB_MAX_ROWS: '1000'
+      PGRST_JWT_SECRET: ${JWT_SECRET:?}
+      PGRST_ADMIN_SERVER_PORT: '3001'
+    healthcheck:
+      # The image has no wget or curl, so the admin server is spoken to with bash's
+      # /dev/tcp. /ready is 200 only once the schema cache is loaded.
+      test:
+        [
+          'CMD',
+          'bash',
+          '-c',
+          'exec 3<>/dev/tcp/127.0.0.1/3001 && printf "GET /ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && grep -q "200 OK" <&3',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # A VPS has no snapshot fairy: this is the only copy of the data that survives the disk.
+  backup:
+    image: postgres:17.7-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?}
+      RETENTION_DAYS: '14'
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - backups:/backups
+    entrypoint: ['/bin/sh', '/backup.sh']
+
+volumes:
+  db-data:
+  backups:
+  caddy-data:
+  caddy-config:

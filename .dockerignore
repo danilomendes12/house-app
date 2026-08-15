@@ -1,0 +1,21 @@
+# The build context is the monorepo root; everything the image needs is source.
+node_modules
+**/node_modules
+.next
+**/.next
+out
+**/out
+.git
+.github
+coverage
+supabase/.branches
+supabase/.temp
+deploy
+docs
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+tsconfig.tsbuildinfo
+**/tsconfig.tsbuildinfo
