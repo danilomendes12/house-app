@@ -42,9 +42,9 @@ function sumPercents(slices: readonly { percent: number }[]): number {
 
 describe('assetClassOf', () => {
   it('maps every fixed-income type to renda fixa', () => {
-    expect(['cdb', 'tesouro', 'lci_lca', 'poupanca'].map((type) => assetClassOf(type as 'cdb'))).toEqual(
-      ['renda_fixa', 'renda_fixa', 'renda_fixa', 'renda_fixa'],
-    );
+    expect(
+      ['cdb', 'tesouro', 'lci_lca', 'poupanca'].map((type) => assetClassOf(type as 'cdb')),
+    ).toEqual(['renda_fixa', 'renda_fixa', 'renda_fixa', 'renda_fixa']);
   });
 
   it('separates equities, funds and crypto', () => {
@@ -125,7 +125,10 @@ describe('netFlowCents', () => {
 
   it('counts contributions minus withdrawals inside the window', () => {
     expect(
-      netFlowCents([contribution('2026-07-01', 1_000_000n), withdrawal('2026-07-20', 300_000n)], range),
+      netFlowCents(
+        [contribution('2026-07-01', 1_000_000n), withdrawal('2026-07-20', 300_000n)],
+        range,
+      ),
     ).toBe(700_000n);
   });
 
@@ -205,6 +208,18 @@ describe('periodPerformance', () => {
     expect(performance.startCents).toBe(1_100_000n);
     expect(performance.gainCents).toBe(33_000n);
     expect(performance.returnPercent).toBeCloseTo(3, 6);
+  });
+
+  it('has no return at all when the series starts on the last day of the window', () => {
+    const performance = periodPerformance([], [snapshot('2026-08-14', 500_000n)], {
+      start: '2025-08-31',
+      end: '2026-08-14',
+    });
+
+    expect(performance.gainCents).toBe(0n);
+    // Not 0%: there was no window to measure, which is a different statement.
+    expect(performance.returnPercent).toBeNull();
+    expect(performance.weightedBase).toBe(0);
   });
 
   it('reports no gain for an asset that has never been valued', () => {
@@ -355,7 +370,12 @@ describe('allocate', () => {
   });
 
   it('merges items sharing a key and drops the non-positive ones', () => {
-    const slices = allocate([slice('rf', 100n), slice('rf', 300n), slice('rv', 0n), slice('x', -50n)]);
+    const slices = allocate([
+      slice('rf', 100n),
+      slice('rf', 300n),
+      slice('rv', 0n),
+      slice('x', -50n),
+    ]);
 
     expect(slices).toEqual([{ key: 'rf', label: 'rf', cents: 400n, percent: 100 }]);
   });

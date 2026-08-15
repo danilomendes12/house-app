@@ -21,7 +21,12 @@ import {
   type IsoMonth,
 } from './date';
 import { ZERO_CENTS, type Cents } from './money';
-import { latestSnapshot, type AssetEventAmount, type AssetSnapshotValue, type AssetType } from './assets';
+import {
+  latestSnapshot,
+  type AssetEventAmount,
+  type AssetSnapshotValue,
+  type AssetType,
+} from './assets';
 
 /* ------------------------------------------------------------------ asset class */
 
@@ -30,7 +35,13 @@ import { latestSnapshot, type AssetEventAmount, type AssetSnapshotValue, type As
  * guesses `type` and `/assets` already corrects it, so a second column would be a second
  * place to get it wrong (SPEC §12).
  */
-export const ASSET_CLASSES = ['renda_fixa', 'renda_variavel', 'fundos', 'cripto', 'outros'] as const;
+export const ASSET_CLASSES = [
+  'renda_fixa',
+  'renda_variavel',
+  'fundos',
+  'cripto',
+  'outros',
+] as const;
 
 export type AssetClass = (typeof ASSET_CLASSES)[number];
 
@@ -84,7 +95,11 @@ export const PORTFOLIO_PERIOD_LABELS: Record<PortfolioPeriod, string> = {
 
 export const DEFAULT_PORTFOLIO_PERIOD: PortfolioPeriod = '12m';
 
-const PERIOD_MONTHS: Record<Exclude<PortfolioPeriod, 'all'>, number> = { '1m': 1, '6m': 6, '12m': 12 };
+const PERIOD_MONTHS: Record<Exclude<PortfolioPeriod, 'all'>, number> = {
+  '1m': 1,
+  '6m': 6,
+  '12m': 12,
+};
 
 export function isPortfolioPeriod(value: string): value is PortfolioPeriod {
   return (PORTFOLIO_PERIODS as readonly string[]).includes(value);
@@ -140,6 +155,35 @@ export function monthsInPeriod(range: DateRange): IsoMonth[] {
   }
 
   return months;
+}
+
+/* ---------------------------------------------------------------- screen views */
+
+/** The dimensions the allocation block can be read by — one at a time. */
+export const ALLOCATION_DIMENSIONS = ['class', 'indexer', 'institution'] as const;
+export type AllocationDimension = (typeof ALLOCATION_DIMENSIONS)[number];
+
+export const ALLOCATION_DIMENSION_LABELS: Record<AllocationDimension, string> = {
+  class: 'Classe',
+  indexer: 'Indexador',
+  institution: 'Instituição',
+};
+
+/** How the asset list can be ordered. Value first — it is the question being asked. */
+export const ASSET_SORTS = ['value', 'return'] as const;
+export type AssetSort = (typeof ASSET_SORTS)[number];
+
+export const ASSET_SORT_LABELS: Record<AssetSort, string> = {
+  value: 'Valor',
+  return: 'Rentabilidade',
+};
+
+export function isAllocationDimension(value: string): value is AllocationDimension {
+  return (ALLOCATION_DIMENSIONS as readonly string[]).includes(value);
+}
+
+export function isAssetSort(value: string): value is AssetSort {
+  return (ASSET_SORTS as readonly string[]).includes(value);
 }
 
 /* ------------------------------------------------------------------- valuation */
@@ -242,7 +286,8 @@ function resolvePeriodStart(
     }
   }
 
-  if (firstInside) return { date: firstInside.date, cents: firstInside.grossValueCents, partial: true };
+  if (firstInside)
+    return { date: firstInside.date, cents: firstInside.grossValueCents, partial: true };
 
   return { date: range.start, cents: investedUpTo(events, range.start), partial: false };
 }
@@ -276,7 +321,11 @@ export function periodPerformance(
   const gainCents = endCents - start.cents - flowCents;
 
   const totalDays = diffDays(window.start, window.end);
-  let weightedBase = Number(start.cents);
+
+  // A window with no days in it — the asset's first snapshot is today — has no base and
+  // no return. Reporting 0% would claim the position stood still through a year nobody
+  // measured it in; the UI shows "—" instead.
+  let weightedBase = totalDays > 0 ? Number(start.cents) : 0;
 
   if (totalDays > 0) {
     for (const event of eventList) {
