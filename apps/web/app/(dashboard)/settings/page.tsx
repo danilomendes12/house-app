@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ChevronRight, FileUp, Inbox, Shapes, Wand2 } from 'lucide-react';
+import { ChevronRight, FileUp, Inbox, Landmark, Shapes, Wand2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cardClass } from '@/components/fields';
 import { countUncategorizedTransactions } from '@/lib/db/transactions';
@@ -12,9 +12,15 @@ export default async function SettingsPage() {
   const items: { href: string; label: string; hint: string; icon: LucideIcon; badge?: number }[] = [
     {
       href: '/import',
-      label: 'Importar CSV',
-      hint: 'Fatura do Nubank, sem duplicar nada',
+      label: 'Importar fatura',
+      hint: 'CSV do Nubank, sem duplicar nada',
       icon: FileUp,
+    },
+    {
+      href: '/import/investments',
+      label: 'Importar investimentos',
+      hint: 'Posição consolidada da XP',
+      icon: Landmark,
     },
     {
       href: '/uncategorized',

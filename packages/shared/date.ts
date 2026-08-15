@@ -43,15 +43,26 @@ export function assertIsoDate(value: string): IsoDate {
   return value;
 }
 
-/** Today's calendar date in the app timezone. */
-export function todayIso(timeZone: string = APP_TIME_ZONE): IsoDate {
+/**
+ * The calendar date an instant falls on, in `timeZone`.
+ *
+ * The conversion has to go through `Intl`: a timestamp near midnight belongs to a different
+ * day in São Paulo than in UTC, and reading it with `getUTCDate` is the off-day bug this
+ * module exists to prevent.
+ */
+export function isoDateAt(instant: Date, timeZone: string = APP_TIME_ZONE): IsoDate {
   // 'en-CA' yields YYYY-MM-DD.
   return new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date());
+  }).format(instant);
+}
+
+/** Today's calendar date in the app timezone. */
+export function todayIso(timeZone: string = APP_TIME_ZONE): IsoDate {
+  return isoDateAt(new Date(), timeZone);
 }
 
 /** Current month in the app timezone. */
