@@ -1,10 +1,11 @@
 # Finanças Pessoais
 
-App pessoal (single-user) para controle de gastos mensais e acompanhamento de patrimônio.
+App da casa (duas pessoas, um household) para controle de gastos mensais e acompanhamento de
+patrimônio.
 
 - **Web + PWA** (instalável no iPhone) — Next.js App Router
 - **Banco/Auth** — Supabase (Postgres + RLS)
-- **Entrada de dados** — manual, com import de CSV da fatura (idempotente)
+- **Entrada de dados** — manual, com import de CSV (fatura do cartão e posição da XP), idempotente
 - **Custo de operação** — R$ 0 (free tiers)
 
 ## Documentação
@@ -81,32 +82,51 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm format:check
 
 ### Variáveis de ambiente
 
-| Variável                        | Escopo | Origem                                    |
-| ------------------------------- | ------ | ----------------------------------------- |
-| `NEXT_PUBLIC_SUPABASE_URL`      | client | Supabase → Project Settings → API         |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client | idem                                      |
-| `SUPABASE_SERVICE_ROLE_KEY`     | server | idem — **nunca** expor no client          |
-| `OWNER_EMAIL`                   | server | o único e-mail que pode entrar no sistema |
+| Variável                        | Escopo | Origem                                                        |
+| ------------------------------- | ------ | ------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | client | Supabase → Project Settings → API                             |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | client | idem                                                          |
+| `SUPABASE_SERVICE_ROLE_KEY`     | server | idem — **nunca** expor no client                              |
+| `OWNER_EMAIL`                   | server | e-mail do dono; `pnpm db:invite` o usa para achar o household |
 
-## Auth single-user
+## Auth e household
 
-Três camadas, todas necessárias:
+O app é de **uma casa**: duas pessoas, um conjunto de dados. Cada uma tem seu login; a linha
+pertence ao household (`household_id`), e `user_id` só registra quem lançou.
+
+Três camadas de acesso, todas necessárias:
 
 1. `enable_signup = false` no Supabase Auth (`supabase/config.toml` e o mesmo ajuste no
    dashboard do projeto hospedado).
 2. Tabela `public.allowed_emails` + trigger `enforce_email_allowlist` em `auth.users`:
    qualquer `INSERT` com e-mail fora da lista é rejeitado no banco.
-3. RLS habilitada em toda tabela; `allowed_emails` não tem policy alguma — só a service
-   role chega nela.
+3. RLS habilitada em toda tabela, com `household_id = current_household_id()`;
+   `allowed_emails` não tem policy alguma — só a service role chega nela.
+
+Para adicionar a segunda pessoa:
+
+```bash
+pnpm db:invite namorada@exemplo.com
+```
+
+O script põe o e-mail na allowlist **já apontando para o household do dono** e cria o usuário.
+É esse `household_id` que o trigger `provision_user` lê no primeiro login — sem ele, a pessoa
+cairia numa casa própria e veria o app vazio. As categorias padrão são semeadas uma única vez
+por household, então o segundo membro não ganha uma segunda cópia da lista.
 
 ## Deploy
 
 **Supabase (hospedado)**
 
+Free tier: 500 MB de banco, suficiente com folga para anos de lançamentos. O projeto **pausa
+após 7 dias sem nenhuma requisição** — uso diário resolve; se ficarem um tempo sem abrir, basta
+despausar pelo dashboard.
+
 1. Crie o projeto e rode `pnpm exec supabase link --project-ref <ref>` + `pnpm exec supabase db push`.
 2. Authentication → Providers → Email: **Confirm signup** ligado, **Allow new users to sign up** desligado.
 3. Authentication → URL Configuration: `Site URL` e `Redirect URLs` com `https://<dominio>/auth/callback`.
-4. Rode `pnpm db:owner` apontando as env vars para o projeto hospedado.
+4. Rode `pnpm db:owner` e depois `pnpm db:invite <e-mail da segunda pessoa>`, com as env vars
+   apontando para o projeto hospedado. A ordem importa: o convite lê o household do dono.
 
 **Vercel**
 
@@ -122,3 +142,5 @@ Três camadas, todas necessárias:
 - [x] Fase 3 — Entrada em lote (import CSV, regras, fila "a categorizar")
 - [x] Fase 4 — Patrimônio (ativos, aportes, snapshots, evolução)
 - [ ] Fase 5 — Refinos
+- [x] Fase 6 — Casa (household compartilhado, RLS por membership, `db:invite`)
+- [x] Fase 7 — Import da posição consolidada da XP

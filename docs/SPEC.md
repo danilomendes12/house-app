@@ -22,7 +22,10 @@ Hoje não existe um lugar único e confiável para responder três perguntas rec
 ## 3. Não-objetivos (v1)
 
 - **App iOS nativo** — a PWA cobre o uso mobile por ora; nativo fica como evolução futura (ver §11). Motivo: conta Apple gratuita expira builds a cada 7 dias.
-- **Multiusuário / compartilhamento** — o sistema é single-user por design; simplifica auth, RLS e produto.
+- ~~**Multiusuário / compartilhamento**~~ — revisto em 2026-08-14: o produto passou a ser a
+  gestão financeira da casa, com duas pessoas usando os mesmos dados. Virou a Fase 6 (§6.3).
+  Continua fora de escopo o multi-tenant de verdade: existe **um** household, cada pessoa
+  pertence a exatamente um, e não há convite pela UI.
 - **Suporte a múltiplas moedas** — tudo em BRL.
 - **Recomendações financeiras / projeções de aposentadoria** — fora de escopo; o produto é de *registro e acompanhamento*.
 - **Integração com bancos (Open Finance / agregadores)** — decisão de 2026-08-02: a v1 é
@@ -33,7 +36,10 @@ Hoje não existe um lugar único e confiável para responder três perguntas rec
 
 ## 4. Usuário e histórias
 
-Persona única: **o dono do sistema** (engenheiro de software, usa web no desktop e PWA no iPhone).
+Duas pessoas, **um household**: o dono do sistema (engenheiro de software, web no desktop e PWA
+no iPhone) e sua companheira (só PWA). Os dois veem e editam exatamente os mesmos dados; o
+sistema registra quem lançou cada coisa, mas isso é atribuição, não permissão — não há papel
+com acesso reduzido.
 
 Ordenadas por prioridade:
 
@@ -99,15 +105,16 @@ finance/
 | PWA | `manifest.webmanifest` + service worker escrito à mão | instalável no iPhone via "Adicionar à Tela de Início"; sem dependência extra |
 | Tooling | pnpm workspaces, ESLint, Prettier, Vitest | |
 
-### 5.4 Segurança (single-user)
+### 5.4 Segurança (household fechado)
 
-- **Signups desabilitados** no Supabase Auth; login apenas com o e-mail do dono (magic link ou senha). Defesa em profundidade: trigger que rejeita `INSERT` em `auth.users` para e-mails fora da allowlist.
-- **RLS habilitado em todas as tabelas**, política `user_id = auth.uid()` — mesmo sendo single-user.
+- **Signups desabilitados** no Supabase Auth; entram apenas os e-mails da `allowed_emails` (magic link). Defesa em profundidade: trigger que rejeita `INSERT` em `auth.users` para e-mails fora da allowlist. Provisionamento é por script (`pnpm db:owner`, `pnpm db:invite`) — não existe convite pela UI.
+- **RLS habilitado em todas as tabelas**, política `household_id = current_household_id()` (§6.3). Sessão sem membership não lê nem escreve nada: a função devolve `null` e toda comparação falha, que é a direção segura.
+- **`user_id` não concede acesso.** Depois da Fase 6 ele diz apenas *quem lançou*; quem autoriza é o `household_id`. Confundir os dois é o erro que reabriria os dados de uma casa para outra.
 - **Segredos apenas server-side:** `SUPABASE_SERVICE_ROLE_KEY` e `OWNER_EMAIL` nunca recebem o prefixo `NEXT_PUBLIC_` nem são importados de client component.
 
 ## 6. Modelo de dados
 
-Convenções: valores monetários em **centavos** (`bigint`), datas de transação como `date` (sem hora), timestamps em `timestamptz`, timezone de referência **America/Sao_Paulo**. Todas as tabelas têm `id uuid pk default gen_random_uuid()`, `user_id uuid references auth.users`, `created_at timestamptz default now()`.
+Convenções: valores monetários em **centavos** (`bigint`), datas de transação como `date` (sem hora), timestamps em `timestamptz`, timezone de referência **America/Sao_Paulo**. Todas as tabelas têm `id uuid pk default gen_random_uuid()`, `household_id uuid references households` (dono da linha, é o que a RLS checa), `user_id uuid references auth.users` (quem lançou) e `created_at timestamptz default now()`.
 
 ### 6.1 Gastos
 
@@ -137,7 +144,7 @@ transactions (
   amount_cents    bigint not null check (amount_cents > 0),
   type            text not null,                -- 'expense' | 'income'
   source          text not null,                -- 'manual' | 'csv'
-  external_id     text unique,                  -- hash da linha do CSV (dedup, §7)
+  external_id     text,                         -- hash da linha do CSV; unique (household_id, external_id) (dedup, §7)
   installment_num   int,                        -- parcela atual (nullable)
   installment_total int,                        -- total de parcelas (nullable)
   notes           text
@@ -148,7 +155,7 @@ budgets (
   category_id  uuid references categories,
   month        date not null,               -- sempre dia 1 (ex.: 2026-08-01)
   amount_cents bigint not null,
-  unique (user_id, category_id, month)
+  unique (household_id, category_id, month)
 )
 
 -- Regras de categorização automática
@@ -205,6 +212,45 @@ asset_snapshots (
 - Todo ativo recebe **snapshot manual** (tela simples: "atualizar valor atual").
 - Evolução mensal = série dos snapshots agregados por mês (último snapshot de cada mês, por ativo). Um mês sem snapshot novo herda o último valor conhecido do ativo — senão o patrimônio total pareceria despencar em todo mês sem atualização.
 
+### 6.3 Household (Fase 6)
+
+```sql
+households (
+  name text not null                      -- "Casa"
+)
+
+household_members (
+  household_id uuid references households,
+  user_id      uuid references auth.users,
+  role         text not null default 'member',   -- 'owner' | 'member'
+  primary key (household_id, user_id)
+)
+
+-- allowed_emails ganha a coluna que diz em qual casa o e-mail entra
+allowed_emails (
+  email        text primary key,
+  household_id uuid references households   -- null = "crie uma casa nova" (o dono)
+)
+```
+
+**Regras:**
+
+- Toda tabela de dados carrega `household_id` (dono da linha) **e** `user_id` (quem lançou). A
+  RLS compara **só** o primeiro; `current_household_id()` é `security definer` porque as
+  policies a chamam e ler `household_members` de dentro de uma policy sobre
+  `household_members` recursaria.
+- **Os uniques seguem o dono, não a pessoa.** `categories (household_id, lower(name))`,
+  `budgets (household_id, category_id, month)`, `transactions (household_id, external_id)`.
+  Deixá-los em `user_id` daria a cada pessoa a sua própria "Mercado", o seu próprio orçamento do
+  mês e a sua própria cópia da fatura importada — a idempotência do §7 só vale dentro do escopo
+  do índice único que a sustenta.
+- **Uma pessoa pertence a exatamente um household**; `current_household_id()` pega a primeira
+  membership. Sessão sem membership não vê nada.
+- **Provisionamento é por trigger + script.** `provision_user` (after insert em `auth.users`) põe
+  a pessoa no household indicado pela allowlist — ou cria a casa, se for a primeira — e semeia as
+  categorias padrão **apenas quando o household ainda não tem nenhuma**: o segundo membro não
+  pode ganhar uma segunda cópia da lista.
+
 ## 7. Import de CSV da fatura
 
 Entrada em lote sem integração: o app do Nubank exporta a fatura como CSV, e o arquivo é
@@ -240,6 +286,74 @@ ordenadas por `priority desc`: a primeira cujo `matcher` for substring case-inse
 descrição define a categoria. Sem regra que case, a transação entra como "a categorizar" e
 aparece na fila (§9).
 
+### 7.1 Import da posição consolidada da XP (Fase 7)
+
+Segunda origem de arquivo, para o patrimônio. A tela é **Ajustes → Importar investimentos**, com
+o mesmo fluxo de duas etapas (prévia → confirmar) e o mesmo re-parse no servidor do texto
+aprovado.
+
+**O que o arquivo é.** Uma *fotografia*, não um extrato: cada linha diz quanto um produto vale
+hoje. Por isso uma linha vira `asset_snapshots`, nunca `asset_events`. A "posição detalhada"
+até traz o total aplicado por produto, mas ele **não** vira aporte: o usuário já lança aportes
+à mão, e importá-los contaria cada um duas vezes, corrompendo o rendimento do §6.2. O valor é
+lido e mostrado na prévia (coluna "Aplicado") para não sumir de vista, e nada mais.
+
+**Formato aceito.** Dois containers: **`.xlsx`** (a "posição detalhada" que o portal exporta) e
+CSV/TSV. O `.xlsx` é aberto em `apps/web/lib/import/xlsx.ts` — um leitor mínimo de ZIP + XML, no
+`apps/web` porque descompactar precisa de `node:zlib`, que `packages/shared` não pode importar
+— e convertido para texto delimitado *uma vez*, na prévia; é esse texto que trafega até o
+confirmar e é re-parseado no servidor. O container é farejado pelos bytes (`PK\x03\x04`), não
+pela extensão. Células são convertidas para o texto que a planilha mostra; a exceção são datas,
+que são números com formato e viram `DD/MM/YYYY` enquanto ainda carregam o formato.
+
+O arquivo traz preâmbulo em prosa e **várias tabelas**, cada uma com seu cabeçalho, e o parser
+relê o cabeçalho toda vez que encontra um. Colunas obrigatórias: uma de produto e uma de valor,
+casadas por prefixo para tolerar `Valor bruto (R$)` e `Posição a mercado`. Na posição detalhada
+**nenhuma coluna se chama "produto"**: o cabeçalho começa com `"22,7% | Prefixado"` — alocação e
+sub-classe —, e é esse marcador que identifica a tabela e a coluna do produto. Entre as colunas
+de valor, bruto vence líquido: `Valor Líquido` já é descontado de IR.
+
+**O que o arquivo tem e não é posição.** O mesmo arquivo lista **proventos provisionados**
+(dividendo anunciado e ainda não pago) e o **saldo disponível** em conta. Nenhum dos dois vira
+ativo: o provento é dinheiro de uma ação cujo valor de mercado já está no arquivo, e importá-lo
+inventaria um ativo e inflaria o patrimônio. Tabelas de provento são reconhecidas pelo próprio
+cabeçalho (`Valor provisionado bruto`) e **zeram o mapeamento de colunas** — sem isso as linhas
+seguintes seriam lidas com o cabeçalho da última tabela de posição, e uma quantidade de ações
+entraria como reais. O que ficou de fora é reportado na prévia, com valor, nunca descartado em
+silêncio. As linhas de título de classe (`Renda Fixa` … `R$ 61.340,71`, o total da seção) são
+descartadas pelo mesmo motivo: importá-las contaria a classe inteira duas vezes.
+
+**Conferência contra o total do arquivo.** A prévia soma o que vai importar mais o que deixou
+de fora e compara com o `Total investido` que o arquivo declara sobre si mesmo, com tolerância
+de R$ 1,00 para arredondamento da XP. É a defesa contra o único erro que um import de posição
+pode cometer em silêncio: a XP muda uma seção, as linhas deixam de casar com qualquer cabeçalho
+e o patrimônio simplesmente encolhe — sem erro, sem prévia vazia, só um número menor.
+
+**Indexador quando a linha não diz.** Na posição detalhada o indexador não é coluna: está na
+taxa (`114,00% CDI`, `IPC-A +13,37%`) ou, no Tesouro, apenas na sub-classe do cabeçalho
+(`Prefixado`, `Inflação`, `Pós-Fixado`). Vale a taxa da linha primeiro e a sub-classe depois;
+`Pós-Fixado` é Selic em título público e CDI no resto. Como o tipo, é palpite que a prévia
+mostra e `/assets` corrige.
+
+**Tipo do ativo é palpite.** `inferAssetType` deduz do nome (`CDB` → `cdb`, ticker terminado em
+11 → `fii` salvo ETFs conhecidos, e assim por diante) e a prévia mostra o resultado; corrigir é
+trabalho de `/assets`. Por isso o import **não** sobrescreve nome, tipo e taxa de um ativo que já
+existe: sobrescrever desfaria a correção a cada arquivo.
+
+**Data do snapshot.** Ordem: data de referência impressa no arquivo ("Posição em 31/07/2026") →
+data de exportação da planilha (`dcterms:created`, convertida para `America/Sao_Paulo`) → campo
+da tela → hoje. O arquivo tem prioridade sobre o campo, que já vem preenchido com hoje: o
+contrário arquivaria a posição de julho dentro de agosto para quem não notasse a diferença. A
+posição detalhada não imprime data nenhuma, e a de exportação é o que o arquivo diz de si mesmo
+— a prévia nomeia a origem da data antes de qualquer gravação.
+
+**Idempotência (regra 6 do CLAUDE.md) por duas chaves, não por hash do arquivo:**
+`assets (household_id, external_ref)` decide se o produto é novo, e `asset_snapshots
+(asset_id, date)` faz o segundo import do mesmo dia sobrescrever em vez de criar uma segunda
+verdade (§12). `external_ref` é `positionKey` — nome e instituição normalizados —, o análogo de
+`transactions.external_id`: mudá-lo quebra o casamento em silêncio e o próximo import cria
+gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não duplicado.
+
 ## 8. Requisitos por prioridade
 
 ### P0 — sem isso não existe produto
@@ -256,6 +370,8 @@ aparece na fila (§9).
 - [x] Import CSV idempotente — Fase 3, critérios do §9 validados no stack local
 - [x] Regras de categorização + fila "a categorizar" — Fase 3
 - [x] Patrimônio: CRUD de ativos, aportes/resgates, snapshots manuais, rendimento por ativo, gráfico de evolução total — Fase 4, critério do §9 validado no stack local
+- [x] Household compartilhado: dois logins, os mesmos dados, RLS por household, atribuição de quem lançou — Fase 6, critérios do §9 validados no stack local
+- [x] Import da posição consolidada da XP (§7.1) — Fase 7, critérios do §9 validados no stack local
 
 ### P2 — futuro (guiar arquitetura, não construir agora)
 - [ ] App iOS nativo (SwiftUI) consumindo Supabase + endpoints existentes; widget de entrada rápida
@@ -285,6 +401,17 @@ aparece na fila (§9).
 **Patrimônio:**
 - Dado um ativo com aportes de R$ 10.000 e snapshot atual de R$ 10.480, então a tela mostra rendimento de R$ 480 (+4,8%).
 
+**Import de investimentos (Fase 7):**
+- Dado um arquivo de posição da XP, quando importo, então cada produto vira um ativo com o valor do dia — e o total do patrimônio reflete a soma.
+- Dado que importei o mesmo arquivo duas vezes, então a segunda importação cria 0 ativos e mantém um único snapshot por ativo naquela data.
+- Dado um ativo cujo tipo eu corrigi à mão em `/assets`, quando reimporto o arquivo, então a correção permanece.
+
+**Household (Fase 6):**
+- Dado que as duas pessoas estão na casa, quando uma lança uma despesa, então a outra a vê no mesmo mês, com a mesma lista de categorias e o mesmo orçamento.
+- Dado um convite novo (`pnpm db:invite`), quando a pessoa entra pela primeira vez, então ela cai no household existente e **não** ganha uma segunda cópia das categorias padrão.
+- Dada uma sessão sem membership, então ela não lê nem escreve linha alguma — e um `insert` com `household_id` forjado é recusado pela RLS.
+- Dado um arquivo de fatura que uma delas já importou, quando a outra importa o mesmo arquivo, então 0 são inseridos.
+
 ## 10. Plano de desenvolvimento por fases
 
 Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fase por sessão de trabalho com o Claude Code, idealmente.
@@ -297,6 +424,8 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | **3 — Entrada em lote** | Fim da digitação | Import CSV idempotente (§7), regras de categorização, fila "a categorizar" |
 | **4 — Patrimônio** | Visão completa | Schema §6.2, CRUD ativos/eventos/snapshots, rendimento, gráfico de evolução |
 | **5 — Refinos** | Qualidade de vida | Exportação de dados, notificações de orçamento, melhorias de UX apontadas pelo uso real |
+| **6 — Casa** | Duas pessoas, os mesmos dados | Household (§6.3): schema, RLS por membership, `pnpm db:invite`, deploy em Supabase Free + Vercel Hobby |
+| **7 — Investimentos por arquivo** | Fim da digitação do patrimônio | Import da posição consolidada da XP (§7.1), idempotente por `assets.external_ref` |
 
 ## 11. Questões em aberto
 
@@ -361,6 +490,31 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
   ativo recém-cadastrado apareceria como R$ 0 logo acima de uma lista que mostra o saldo
   real dele. O gráfico continua sendo só de snapshots, então o último ponto pode ficar
   abaixo do total — a tela diz isso em uma linha quando há ativos nessa situação.
+- **Posição da XP vira snapshot, nunca aporte** (Fase 7): o arquivo diz quanto o produto vale,
+  não quanto entrou nele. Derivar `asset_events` dali faria o rendimento (§6.2) sair sempre zero,
+  porque o "investido" passaria a ser o próprio valor de mercado. Vale também para a posição
+  detalhada, que *tem* a coluna "Total aplicado": ela é lida e exibida na prévia, mas continua
+  fora do banco enquanto aportes forem lançados à mão — importar os dois contaria em dobro. Se um
+  dia o aporte manual sair de cena, essa coluna é o caminho para reconstruir `asset_events`.
+- **Provento provisionado e saldo em conta não são ativo** (Fase 7): estão no "Total investido"
+  que a XP declara, mas o provento é dinheiro de uma ação já avaliada no arquivo e o saldo é
+  caixa. Entram na prévia como "fora da importação", com valor, para que a conferência contra o
+  total do arquivo feche — o que também é o motivo de a conferência existir: um import de posição
+  que perde uma seção não dá erro, só devolve um patrimônio menor.
+- **O import não sobrescreve ativo existente** (Fase 7): só cria os que faltam e escreve o
+  snapshot. O tipo vem de um palpite (`inferAssetType`), e `/assets` é onde ele é corrigido — um
+  import que sobrescrevesse desfaria a correção todo mês.
+- **O dono da linha é o household; `user_id` virou atribuição** (Fase 6): a RLS compara
+  `household_id`, e `user_id` passou a responder "quem lançou". Renomear a coluna para
+  `created_by` seria o rótulo honesto, mas ela é escrita por todo módulo de `lib/db` e lida
+  pelos tipos gerados — o `comment on column` carrega o significado no lugar do rename.
+- **O convite nomeia a casa; nada adivinha** (Fase 6): `allowed_emails.household_id` diz em qual
+  household o e-mail entra, e `provision_user` lê isso. A alternativa — "entre no household que
+  já existir" — funciona com duas pessoas e vira um vazamento silencioso na primeira vez que
+  existirem duas casas.
+- **Não há convite pela UI** (Fase 6): `households` e `household_members` são somente leitura
+  para o app; quem provisiona é `pnpm db:invite` com a service role. Uma tela de convite exigiria
+  papel de admin e fluxo de aceite para dois usuários que se conhecem pessoalmente.
 - **Gráfico de patrimônio é linha simples** (Fase 4): a decisão de virar small multiples na
   Fase 2 valia para o gasto *por categoria*, onde a paleta semeada falhava separação para
   daltonismo (laranja↔verde, ΔE 4,8). Patrimônio é série única, então não há cor
