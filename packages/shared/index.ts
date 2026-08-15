@@ -6,4 +6,5 @@ export * from './csv';
 export * from './import';
 export * from './categorize';
 export * from './assets';
+export * from './portfolio';
 export * from './xp-position';
