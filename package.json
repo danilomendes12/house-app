@@ -20,7 +20,8 @@
     "test:watch": "vitest",
     "db:reset": "supabase db reset",
     "db:owner": "node scripts/create-owner.mjs",
-    "db:invite": "node scripts/invite-member.mjs"
+    "db:invite": "node scripts/invite-member.mjs",
+    "db:password": "node scripts/set-password.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

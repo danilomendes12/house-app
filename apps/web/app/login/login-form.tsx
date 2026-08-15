@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { requestMagicLink, type LoginState } from './actions';
+import { signIn, type LoginState } from './actions';
 
 const initialState: LoginState = { status: 'idle' };
 
@@ -15,24 +15,13 @@ function SubmitButton() {
       disabled={pending}
       className="h-12 w-full rounded-xl bg-[var(--color-brand)] text-base font-medium text-white transition disabled:opacity-60"
     >
-      {pending ? 'Enviando…' : 'Enviar link de entrada'}
+      {pending ? 'Entrando…' : 'Entrar'}
     </button>
   );
 }
 
 export function LoginForm() {
-  const [state, formAction] = useActionState(requestMagicLink, initialState);
-
-  if (state.status === 'sent') {
-    return (
-      <div className="mt-6 rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] p-4">
-        <p className="text-sm">
-          Link enviado para <strong>{state.email}</strong>. Abra o e-mail neste mesmo navegador para
-          entrar.
-        </p>
-      </div>
-    );
-  }
+  const [state, formAction] = useActionState(signIn, initialState);
 
   return (
     <form action={formAction} className="mt-6 space-y-3">
@@ -49,6 +38,19 @@ export function LoginForm() {
         placeholder="voce@exemplo.com"
         className="h-12 w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-3 text-base outline-none focus:border-[var(--color-brand)]"
       />
+
+      <label htmlFor="password" className="block text-sm font-medium">
+        Senha
+      </label>
+      <input
+        id="password"
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        required
+        className="h-12 w-full rounded-xl border border-[var(--color-line)] bg-[var(--color-surface)] px-3 text-base outline-none focus:border-[var(--color-brand)]"
+      />
+
       {state.status === 'error' ? (
         <p role="alert" className="text-sm text-red-600 dark:text-red-400">
           {state.message}

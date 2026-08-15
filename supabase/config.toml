@@ -17,29 +17,29 @@ enabled = true
 port = 54323
 api_url = "http://127.0.0.1"
 
-# Catches outgoing magic links locally: http://127.0.0.1:54324
+# No SMTP anywhere, in dev or in production: sign-in is e-mail + password, so nothing is
+# ever mailed. Mailpit existed only to catch the magic link (removed in Fase 9).
 [local_smtp]
-enabled = true
-port = 54324
+enabled = false
 
 [auth]
 enabled = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000/auth/callback"]
 jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
-# Single-user system: the only user is provisioned with `pnpm db:owner`.
+# Closed household: the two users are provisioned with `pnpm db:owner` / `pnpm db:invite`.
 enable_signup = false
 enable_anonymous_sign_ins = false
 enable_manual_linking = false
+# There is no password recovery flow (it would need SMTP again), so the password is the
+# whole door — `pnpm db:password <email>` is the reset path. Keep this in sync with
+# GOTRUE_PASSWORD_MIN_LENGTH in deploy/docker-compose.yml.
+minimum_password_length = 12
 
 [auth.email]
-# Enables the e-mail provider (magic links). Actual signups stay blocked by
-# [auth] enable_signup = false plus the allowlist trigger in the database.
+# Enables the e-mail provider, which is what makes `grant_type=password` work at all.
+# Signups stay blocked by [auth] enable_signup = false plus the allowlist trigger.
 enable_signup = true
-double_confirm_changes = true
 enable_confirmations = false
+# Changing a password requires proving the current one, even straight against the API.
 secure_password_change = true
-otp_expiry = 3600
-max_frequency = "20s"

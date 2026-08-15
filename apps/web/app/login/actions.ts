@@ -1,42 +1,40 @@
 'use server';
 
+import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { getSiteUrl } from '@/lib/site-url';
 
-export type LoginState =
-  { status: 'idle' } | { status: 'sent'; email: string } | { status: 'error'; message: string };
+export type LoginState = { status: 'idle' } | { status: 'error'; message: string };
 
 /**
- * Sends a magic link. Signups are disabled (`shouldCreateUser: false`) and the database
- * only accepts the owner's e-mail, so this is a no-op for anyone else — and the response
- * is deliberately identical either way.
+ * Signs in with e-mail and password. Users are provisioned by script (`pnpm db:owner`,
+ * `pnpm db:invite`); signups are disabled on the server and the database only accepts
+ * allowlisted e-mails, so there is nothing to create here.
+ *
+ * The answer is deliberately the same for a wrong password and for an e-mail that does
+ * not exist — otherwise this form would tell an outsider who has an account.
  */
-export async function requestMagicLink(
-  _previous: LoginState,
-  formData: FormData,
-): Promise<LoginState> {
+export async function signIn(_previous: LoginState, formData: FormData): Promise<LoginState> {
   const email = String(formData.get('email') ?? '')
     .trim()
     .toLowerCase();
+  const password = String(formData.get('password') ?? '');
 
-  if (!email || !email.includes('@')) {
-    return { status: 'error', message: 'Informe um e-mail válido.' };
+  if (!email || !email.includes('@') || !password) {
+    return { status: 'error', message: 'Informe e-mail e senha.' };
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: false,
-      emailRedirectTo: `${await getSiteUrl()}/auth/callback`,
-    },
-  });
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
 
-  if (error && error.status !== 422) {
-    // 422 = user does not exist / signups disabled. Do not disclose that.
-    console.error('[auth] magic link request failed', error.message);
-    return { status: 'error', message: 'Não foi possível enviar o link agora. Tente de novo.' };
+  if (error) {
+    // 400 = wrong credentials, 422 = user does not exist / signups disabled.
+    // Both get the same sentence: do not disclose which one happened.
+    if (error.status === 400 || error.status === 422) {
+      return { status: 'error', message: 'E-mail ou senha inválidos.' };
+    }
+    console.error('[auth] sign in failed', error.message);
+    return { status: 'error', message: 'Não foi possível entrar agora. Tente de novo.' };
   }
 
-  return { status: 'sent', email };
+  redirect('/');
 }
