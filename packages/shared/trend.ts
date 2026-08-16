@@ -9,7 +9,7 @@
 
 import { monthOf, type IsoDate, type IsoMonth } from './date';
 import { ZERO_CENTS, type Cents } from './money';
-import type { CategoryKey, TransactionType } from './budget';
+import type { CategoryKey, TransactionType } from './summary';
 
 /** Window sizes offered by the trend screen. */
 export const TREND_WINDOWS = [3, 6, 12] as const;

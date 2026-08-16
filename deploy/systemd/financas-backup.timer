@@ -1,0 +1,21 @@
+# 03:20, every day, in the VM's timezone — `pnpm server init` sets that to
+# America/Sao_Paulo, so the dump lands in the middle of the night for the two people who
+# use this.
+#
+# Persistent=true is the part that matters on a VM that can be stopped: if the machine was
+# down at 03:20, the dump runs once at the next boot instead of being skipped. A backup
+# schedule that silently misses the days the server was off is how you end up restoring
+# from three weeks ago.
+
+[Unit]
+Description=Dump diário do banco do Finanças
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+# Spread the load away from every other machine that also picked a round hour.
+RandomizedDelaySec=15m
+Persistent=true
+Unit=financas-backup.service
+
+[Install]
+WantedBy=timers.target

@@ -20,7 +20,10 @@
     "test:watch": "vitest",
     "db:owner": "node scripts/create-owner.mjs",
     "db:invite": "node scripts/invite-member.mjs",
-    "db:password": "node scripts/set-password.mjs"
+    "db:password": "node scripts/set-password.mjs",
+    "db:dump": "node scripts/db-backup.mjs",
+    "db:restore": "node scripts/db-restore.mjs",
+    "server": "node scripts/server.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",

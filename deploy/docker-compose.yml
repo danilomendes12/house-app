@@ -6,7 +6,11 @@
 #
 #   docker compose up -d --wait          # db + auth + rest + caddy
 #   docker compose --profile studio up -d   # plus the database UI
-#   docker compose --profile prod up -d     # plus the app's production build
+#   docker compose --profile web up -d      # plus the app's own container
+#
+# On the server this file is layered with docker-compose.server.yml, which is the whole
+# difference between the two installations: 80/443 published, DOMAIN required, and `web`
+# always on. Everything else — images, wiring, secrets — is deliberately identical.
 #
 # Every `${VAR:?}` is deliberate: nothing here has a default, so the stack refuses to start
 # with a missing secret instead of silently falling back to the Supabase CLI's public demo
@@ -22,8 +26,10 @@ services:
   # /auth/v1/* and /rest/v1/* under it, and those are two different containers — this is
   # what joins them, and it is what replaces Kong. See Caddyfile.
   #
-  # Loopback only: unreachable from another machine. It is published at all because the
-  # Next dev server runs on the host, not in the network.
+  # On :8000 it is loopback only — unreachable from another machine, published at all only
+  # because the Next dev server runs on the host and not in this network. The public side
+  # (80/443, the app, the certificate) is added by docker-compose.server.yml and exists
+  # nowhere else: :8000 is the Supabase API and stays private on both installations.
   caddy:
     image: caddy:2.10.2-alpine
     restart: unless-stopped
@@ -139,11 +145,12 @@ services:
       retries: 10
       start_period: 30s
 
-  # The app's production build, under a profile: the everyday flow runs Next on the host
-  # with hot reload (`pnpm dev`) against the same services. This is the smoke test of the
-  # thing that will actually ship — `pnpm stack prod`.
+  # The app itself. Behind a profile because *here* the everyday flow runs Next on the host
+  # with hot reload (`pnpm dev`) against these same services, and this is only the smoke
+  # test of the thing that ships — `pnpm stack prod`. On the server the profile is always
+  # on: there it is the app, built from the checked-out commit and waited on like the rest.
   web:
-    profiles: ['prod']
+    profiles: ['web']
     build:
       context: ..
       dockerfile: Dockerfile

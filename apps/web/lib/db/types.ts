@@ -47,12 +47,12 @@ export interface Transaction {
   notes: string | null;
 }
 
-export interface Budget {
+/** One item of the household's shared checklist. */
+export interface Todo {
   id: string;
-  categoryId: string;
-  /** First day of the month, `YYYY-MM-01`. */
-  month: IsoDate;
-  amountCents: Cents;
+  title: string;
+  /** When it was checked off, as a timestamp; `null` while pending. */
+  doneAt: string | null;
 }
 
 export interface Asset {
@@ -111,12 +111,11 @@ export function toTransaction(row: Tables<'transactions'>): Transaction {
   };
 }
 
-export function toBudget(row: Tables<'budgets'>): Budget {
+export function toTodo(row: Tables<'todos'>): Todo {
   return {
     id: row.id,
-    categoryId: row.category_id,
-    month: row.month,
-    amountCents: toCents(row.amount_cents),
+    title: row.title,
+    doneAt: row.done_at,
   };
 }
 

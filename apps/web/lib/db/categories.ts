@@ -68,8 +68,8 @@ export async function setCategoryArchived(id: string, isArchived: boolean): Prom
 
 /**
  * Permanently deletes a category. Transactions that referenced it fall back to
- * "a categorizar" (`on delete set null`) and its budgets go with it — which is why
- * archiving is the default action in the UI.
+ * "a categorizar" (`on delete set null`), which is why archiving is the default action in
+ * the UI.
  */
 export async function deleteCategory(id: string): Promise<void> {
   const { supabase } = await authedClient();

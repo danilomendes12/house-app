@@ -1,0 +1,5 @@
+# Dumps live here — on this machine and, at the same relative path, on the VM. They carry
+# the household's real financial data and the bcrypt hashes from auth.users: never commit
+# one. The directory itself is tracked so `pnpm db:dump` has somewhere to land.
+*.dump
+*.dump.partial

@@ -9,15 +9,15 @@
 
 ## 1. Problema
 
-Hoje não existe um lugar único e confiável para responder três perguntas recorrentes: *quanto gastei este mês e em quê*, *quanto ainda posso gastar* e *quanto meu patrimônio rendeu*. Os dados estão espalhados entre o app do Nubank, planilhas e extratos de corretoras, e a consolidação manual é trabalhosa o suficiente para não acontecer com regularidade.
+Hoje não existe um lugar único e confiável para responder duas perguntas recorrentes: *quanto gastei este mês e em quê* e *quanto meu patrimônio rendeu*. Os dados estão espalhados entre o app do Nubank, planilhas e extratos de corretoras, e a consolidação manual é trabalhosa o suficiente para não acontecer com regularidade.
 
 ## 2. Objetivos
 
-1. **Visibilidade de gastos em < 10 segundos:** abrir o app e ver imediatamente o total do mês, o gasto por categoria e quanto resta do orçamento.
+1. **Visibilidade de gastos em < 10 segundos:** abrir o app e ver imediatamente o total do mês e o gasto por categoria, com o peso de cada uma no mês.
 2. **Entrada de despesa manual em < 15 segundos** pelo celular (PWA), incluindo categoria.
 3. **Lançamento em lote sem retrabalho:** importar o CSV da fatura do Nubank quantas vezes for preciso, sem gerar duplicatas, com categorização automática por regras.
 4. **Acompanhamento de patrimônio:** valor consolidado, rendimento por ativo e evolução histórica mensal.
-5. **Custo de operação baixo e previsível.** Era R$ 0/mês nos free tiers de Supabase e Vercel; desde a Fase 9 é o custo de rodar a stack você mesmo — hoje zero, porque ela roda na sua máquina, e amanhã o de onde você a colocar (§11, Q5). O que se comprou com isso foi não depender de um projeto que pausa após 7 dias sem requisição.
+5. **Custo de operação baixo e previsível.** Era R$ 0/mês nos free tiers de Supabase e Vercel; desde a Fase 9 é o custo de rodar a stack você mesmo, e desde a Fase 11 esse custo tem endereço: **R$ 0/mês** numa VM Always Free da Oracle (§5.1). O que se comprou com isso foi não depender de um projeto que pausa após 7 dias sem requisição.
 
 ## 3. Não-objetivos (v1)
 
@@ -44,7 +44,7 @@ com acesso reduzido.
 Ordenadas por prioridade:
 
 1. Como dono, quero **registrar uma despesa pelo celular em segundos** para não depender de lembrar depois.
-2. Como dono, quero **ver o gasto do mês por categoria com o orçamento restante** para decidir se posso gastar mais.
+2. Como dono, quero **ver o gasto do mês por categoria, com o peso de cada uma**, para saber onde o dinheiro está indo.
 3. Como dono, quero **importar a fatura do cartão de uma vez, já categorizada**, para não digitar nada que já existe digitalmente.
 4. Como dono, quero **comparar meses e ver tendências (3/6/12 meses)** para identificar categorias que estão crescendo.
 5. Como dono, quero **cadastrar meus investimentos e aportes** para saber quanto tenho e quanto cada ativo rendeu.
@@ -70,15 +70,17 @@ Ordenadas por prioridade:
 
 **Consequências:** fica fácil evoluir para app iOS depois (o iOS falaria direto com Supabase + endpoints do Next). O app roda inteiro em `localhost` durante o desenvolvimento; nada no produto depende de estar publicado.
 
-**Onde isso roda (revisto na Fase 9, de novo na Fase 10).** A escolha acima é de
-*arquitetura*, não de hospedagem. A hospedagem é uma segunda decisão, e hoje ela está
-**em aberto** (§11, Q5) — o que já se decidiu é a *forma*:
+**Onde isso roda (revisto na Fase 9, de novo na Fase 10, respondido na Fase 11).** A escolha
+acima é de *arquitetura*, não de hospedagem. A hospedagem é uma segunda decisão, e ela tem
+duas partes — a *forma* (decidida na Fase 9) e o *lugar* (decidido na Fase 11):
 
 | Opção | Prós | Contras | Veredito |
 |---|---|---|---|
 | **Supabase self-hosted em `docker compose` (escolhida)** | Dados seus, sem pausa por inatividade, custo previsível, e o mesmo stack roda na sua máquina e onde quer que ele vá parar | Operação é sua: backup, atualização, certificado | ✅ a forma |
 | Vercel + Supabase hospedado | Zero operação, free tier | O projeto Supabase **pausa após 7 dias** sem requisição; a config vai *assada* no build | ❌ desde a Fase 9 |
-| Onde hospedar (VM, PaaS, casa) | — | — | ⏳ em aberto (§11, Q5) |
+| **VM Always Free da Oracle Cloud (escolhida)** | 2 OCPU ARM / 12 GB por R$ 0, indefinidamente; disco de verdade; a mesma stack sem adaptação | Operação é sua; A1 sofre com "Out of host capacity" na criação; conta em trial pode ser recuperada por ociosidade | ✅ o lugar, Fase 11 |
+| PaaS com Docker (Fly, Railway, Render) | Menos operação | O banco vira um add-on pago ou some no free tier; a stack de quatro containers deixa de ser a mesma | ❌ Fase 11 |
+| Máquina em casa | Custo zero e disco à mão | Depende do link e da energia da casa; NAT, IP dinâmico e a PWA da esposa quebrando quando falta luz | ❌ Fase 11 |
 
 O que a Fase 9 removeu foram as três amarras que impediam a primeira linha: SMTP (login por
 senha), URL de redirect (idem) e configuração em build time (`SUPABASE_URL` e
@@ -111,7 +113,7 @@ finance/
 │       ├── lib/                # client supabase (só servidor), acesso a dados
 │       └── public/             # manifest.webmanifest, ícones, service worker
 ├── packages/
-│   └── shared/                 # tipos TS e regras puras: dinheiro, datas, orçamento,
+│   └── shared/                 # tipos TS e regras puras: dinheiro, datas, resumo do mês,
 │                               # tendências, import CSV, categorização, patrimônio
 ├── supabase/
 │   ├── migrations/             # SQL versionado (fonte da verdade do schema)
@@ -154,13 +156,23 @@ containers. O bloco `:8000` faz `handle_path /auth/v1/*` → `auth:9999` e `/res
 `rest:3000` (os dois servem na raiz, então o prefixo é *removido*). Kong existiria para
 key-auth, CORS e rate limit de uma API pública; esta não é.
 
-`SUPABASE_URL` nomeia o mesmo endereço de dois jeitos: `http://127.0.0.1:8000` para o Next
-rodando no host (`pnpm dev`) e `http://caddy:8000` de dentro da rede do compose
-(`pnpm stack prod`).
+`SUPABASE_URL` nomeia o mesmo endereço de três jeitos, e a diferença é só de onde se olha:
+`http://127.0.0.1:8000` para o Next rodando no host (`pnpm dev`), `http://caddy:8000` de
+dentro da rede do compose (`pnpm stack prod` e o container `web` do servidor) e, na VM, de
+novo `http://127.0.0.1:8000` para os scripts que rodam lá fora dos containers
+(`db:owner`, `db:invite`, `db push`). Confundir os dois primeiros dá ECONNREFUSED, não 401.
 
-Não estão aqui, e a ausência é deliberada enquanto a hospedagem não for escolhida (§11,
-Q5): bloco público do Caddy, domínio, TLS e backup automatizado. O `Dockerfile` e o serviço
-`web` já existem e rodam — é o servidor que falta, não o app.
+**O que difere no servidor (Fase 11): um arquivo.** `deploy/docker-compose.server.yml`,
+layerizado sobre o compose base quando o `deploy/.env` da instalação diz
+`DEPLOY_TARGET=server`. Ele publica 80/443 no Caddy, exige `DOMAIN` e liga o `web` como
+serviço de primeira classe; imagens, wiring, segredos, healthchecks e ordem de subida são os
+mesmos objetos nos dois lugares, que é o que faz "funciona na minha máquina" continuar
+significando alguma coisa.
+
+O `Caddyfile` passou a ter dois blocos: `:8000`, a API do Supabase, **privado nas duas
+instalações**, e `{$DOMAIN}`, que faz `reverse_proxy web:3000` com certificado do Let's
+Encrypt. Localmente `DOMAIN` não existe e o bloco cai em `localhost`, para o qual o Caddy usa
+a CA interna e não fala com ninguém — e as portas 80/443 nem são publicadas.
 
 ### 5.4 Segurança (household fechado)
 
@@ -211,14 +223,6 @@ transactions (
   notes           text
 )
 
--- Orçamentos mensais por categoria
-budgets (
-  category_id  uuid references categories,
-  month        date not null,               -- sempre dia 1 (ex.: 2026-08-01)
-  amount_cents bigint not null,
-  unique (household_id, category_id, month)
-)
-
 -- Regras de categorização automática
 category_rules (
   matcher      text not null,               -- substring case-insensitive da descrição
@@ -232,7 +236,7 @@ category_rules (
 - **Regime de competência:** despesa de cartão conta no mês da **data da compra** (parcelas: cada parcela na data da respectiva fatura).
 - **Pagamento de fatura não é despesa** (é transferência interna) — descartado no import para não duplicar.
 - Estorno/refund vira transação `type = 'income'` na mesma categoria.
-- "Restante do orçamento" = `budgets.amount_cents − Σ despesas da categoria no mês`. Categoria sem orçamento aparece sem barra de progresso.
+- O "gasto" de uma categoria no mês é `Σ despesas − Σ receitas lançadas nela`, e a barra ao lado da linha é a **participação** dela no mês (`gasto da categoria ÷ gasto do mês`). Não há orçamento — ver §12.
 
 ### 6.2 Patrimônio
 
@@ -333,16 +337,35 @@ allowed_emails (
   policies a chamam e ler `household_members` de dentro de uma policy sobre
   `household_members` recursaria.
 - **Os uniques seguem o dono, não a pessoa.** `categories (household_id, lower(name))`,
-  `budgets (household_id, category_id, month)`, `transactions (household_id, external_id)`.
-  Deixá-los em `user_id` daria a cada pessoa a sua própria "Mercado", o seu próprio orçamento do
-  mês e a sua própria cópia da fatura importada — a idempotência do §7 só vale dentro do escopo
-  do índice único que a sustenta.
+  `transactions (household_id, external_id)`. Deixá-los em `user_id` daria a cada pessoa a sua
+  própria "Mercado" e a sua própria cópia da fatura importada — a idempotência do §7 só vale
+  dentro do escopo do índice único que a sustenta.
 - **Uma pessoa pertence a exatamente um household**; `current_household_id()` pega a primeira
   membership. Sessão sem membership não vê nada.
 - **Provisionamento é por trigger + script.** `provision_user` (after insert em `auth.users`) põe
   a pessoa no household indicado pela allowlist — ou cria a casa, se for a primeira — e semeia as
   categorias padrão **apenas quando o household ainda não tem nenhuma**: o segundo membro não
   pode ganhar uma segunda cópia da lista.
+
+### 6.4 Tarefas (Fase 12)
+
+```sql
+-- Checklist compartilhada da casa
+todos (
+  title   text not null,
+  done_at timestamptz                       -- null = pendente; é todo o estado
+)
+```
+
+**Regras:**
+
+- **Não é um objeto financeiro:** sem valor, sem mês, sem categoria. É a lista que fica ao lado
+  do dinheiro ("ligar para o contador", "renegociar o plano"), e no momento em que ganhar um
+  valor em centavos vira uma segunda tabela de transações com regras piores.
+- `done_at` é timestamp e não boolean: "concluída em DD/MM" sai da mesma coluna, e desmarcar é
+  um `update` para `null`.
+- Ordem de leitura: pendentes primeiro, mais recentes no topo dentro de cada grupo. Não há
+  ordenação manual — não existe `sort_order` enquanto não existir UI para arrastar.
 
 ## 7. Import de CSV da fatura
 
@@ -454,7 +477,7 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - [x] CRUD de transações manuais (web e PWA mobile) com categoria e data — Fase 1
 - [x] Categorias padrão (seed) + CRUD de categorias — Fase 1; o seed é por usuário (trigger em `auth.users`), já que categorias são dados do usuário
 - [x] Dashboard mensal: total do mês, breakdown por categoria (lista com barras), navegação entre meses — Fase 1
-- [x] Orçamento por categoria com "quanto resta" (barra de progresso) — Fase 1, critérios do §9 validados no stack local
+- [x] ~~Orçamento por categoria com "quanto resta" (barra de progresso)~~ — entregue na Fase 1 e **removido na Fase 12** (§12): a barra de cada linha voltou a ser a participação da categoria no mês
 
 ### P1 — o produto fica bom
 - [x] Gráficos de tendência (linha, 3/6/12 meses) por categoria e total — Fase 2
@@ -468,21 +491,23 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - [x] Carteira: alocação por classe/indexador/instituição, concentração, vencimentos próximos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês — Fase 8
 - [x] Self-hosted: login por e-mail e senha, configuração em runtime (imagem portátil) e a stack em `docker compose` — Fase 9, critérios do §9 validados na stack
 - [x] Um fluxo só: uma stack, um arquivo de env, uma configuração de auth; `pnpm dev` sobe tudo — Fase 10, critérios do §9 validados na stack
-- [ ] Hospedagem: TLS com domínio e backup automático com restore testado — Fase 11, quando §11 Q5 for respondida
+- [x] Hospedagem: TLS com domínio e backup automático com restore testado — Fase 11, numa VM Always Free da Oracle (§11 Q5), com o restore executado de verdade a partir de um dump do backup automático
+- [x] Lista de tarefas compartilhada da casa (§6.4) — Fase 12
 
 ### P2 — futuro (guiar arquitetura, não construir agora)
 - [ ] App iOS nativo (SwiftUI) consumindo Supabase + endpoints existentes; widget de entrada rápida
 - [ ] Integração Open Finance (agregador tipo Pluggy): sync de cartão e snapshots de investimento, com cron diário. Removida da v1 em 2026-08-02 (§3); o `external_id` único e a coluna `source` já acomodam uma segunda origem de dados sem migration de dados
 - [ ] Exportação de dados (CSV/JSON) e backup automático
-- [ ] Notificações (orçamento estourando)
 
 ## 9. Critérios de aceite dos fluxos principais
 
 **Entrada rápida (PWA):**
 - Dado que estou logado no celular, quando abro o PWA, então o botão "+" de nova despesa está acessível em 1 toque; ao salvar (valor, categoria, descrição opcional, data = hoje por default), a despesa aparece no dashboard do mês imediatamente.
 
-**Orçamento:**
-- Dado um orçamento de R$ 800 em "Mercado" e R$ 600 gastos, quando abro o dashboard, então vejo "R$ 200 restantes" e barra em 75%; ao ultrapassar 100%, a barra muda de cor e mostra o excedente.
+**Tarefas:**
+- Dado que escrevo "renegociar o plano" e envio, então a tarefa aparece em "Pendentes", o campo esvazia e o foco continua nele para eu escrever a próxima.
+- Dado que marco uma tarefa, então ela desce para "Concluídas", riscada e com a data; desmarcá-la a devolve para "Pendentes".
+- Dado que a outra pessoa marcou uma tarefa, quando abro a aba, então eu a vejo marcada — a lista é do household.
 
 **Import CSV idempotente:**
 - Dado que importei o mesmo arquivo duas vezes, então a segunda importação insere 0 registros e informa "N ignorados (já existentes)".
@@ -530,10 +555,12 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - Dado `pnpm stack types`, então os tipos gerados contra o banco da stack são idênticos aos versionados.
 - Dado que procuro no repositório por domínio, TLS, backup ou procedimento de deploy, então não acho nada — o que não existe não está documentado como se existisse.
 
-**Hospedagem (Fase 11, pendente — §11 Q5):**
-- Dado um `.env` preenchido em um servidor limpo, quando sigo a sequência documentada, então o app responde em `https://<domínio>`.
-- Dado um dump gerado pelo backup automático, quando sigo o procedimento de restore em um banco vazio, então os lançamentos e o patrimônio voltam íntegros.
+**Hospedagem (Fase 11):**
+- Dada uma VM recém-criada e vazia, quando rodo `pnpm server init --owner <email>`, então o app responde em `https://tinocot.com`, com o dono provisionado e a senha impressa uma única vez.
+- Dado um dump gerado pelo backup automático, quando rodo `pnpm db:restore`, então os lançamentos e o patrimônio voltam íntegros, com **um** household — não dois — e com `external_id`/`external_ref` preservados. Validado na stack: 2 usuários, 1 household, 64 transações, 12 ativos, 7 migrations no histórico.
 - Dado que abro pelo iPhone no domínio com HTTPS, então a PWA instala e o service worker registra.
+- Dado `pnpm server` duas vezes seguidas sem commit novo, então a segunda não muda nada — nem sequer tira um dump, porque o dump é condicionado a haver migration pendente.
+- Dado que procuro por porta pública além de 80 e 443, então não acho nenhuma: Postgres, a API do Supabase e o Studio ficam em `127.0.0.1` dentro da VM.
 
 **Household (Fase 6):**
 - Dado que as duas pessoas estão na casa, quando uma lança uma despesa, então a outra a vê no mesmo mês, com a mesma lista de categorias e o mesmo orçamento.
@@ -558,7 +585,8 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | **8 — Carteira** | Patrimônio vira acompanhamento, não cadastro | Alocação por classe/indexador/instituição, concentração, vencimentos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês (§6.2). Sem migration |
 | **9 — Self-hosted** | O app instala em qualquer lugar | Login por e-mail e senha (fim do magic link, do SMTP e da URL de redirect), configuração do Supabase em runtime (imagem portátil, fim das `NEXT_PUBLIC_*`), `Dockerfile` standalone e `deploy/docker-compose.yml` com Caddy + Postgres + GoTrue + PostgREST (§5.3). Sem migration |
 | **10 — Um fluxo só** | Um jeito de subir, não três | Fim da stack paralela da Supabase CLI (`supabase start`): o compose vira o único ambiente e a CLI vira ferramenta. `pnpm dev` sobe tudo e roda o Next no host com hot reload; Studio e build de produção atrás de profiles. Um arquivo de env, uma configuração de auth. Remoção do que descrevia uma infra inexistente: domínio, TLS, backup e procedimento de VM (§5.3). Sem migration |
-| **11 — Hospedagem** | O app sai da sua máquina | Escolher onde (§11, Q5) e repor o que a Fase 10 tirou, agora contra um alvo real: bloco público do Caddy com TLS, backup automatizado **com restore testado**, e a rotina de migrations remotas. Sem migration |
+| **11 — Hospedagem** ✅ | O app sai da sua máquina | VM Always Free da Oracle (Ampere A1, Ubuntu 24.04) com a mesma stack. Reposto o que a Fase 10 tirou, agora contra um alvo real: bloco público do Caddy com TLS em `tinocot.com`, `deploy/docker-compose.server.yml` (o único arquivo que difere entre laptop e servidor), `pnpm server init`/`pnpm server` para deploy inicial e de manutenção, `pnpm db:dump`/`pnpm db:restore` servindo aos três usos, timer de backup diário **com restore testado**, e a rotina de migrations remotas. Tutorial do console da Oracle em [`docs/DEPLOY.md`](./DEPLOY.md). Sem migration |
+| **12 — Tarefas** ✅ | A aba de orçamento vira a lista da casa | Remoção do orçamento inteiro — tabela `budgets`, telas, `budgetStatus` e a barra de "quanto resta" (§12) — e, no lugar dela na tab bar, a checklist compartilhada do §6.4. Duas migrations: `drop table budgets` e `create table todos` |
 
 ## 11. Questões em aberto
 
@@ -568,7 +596,7 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | ~~Q2~~ | ~~Renda entra no sistema para calcular "sobra do mês"?~~ | — | Resolvida em 2026-08-02: tendências cobrem só despesas (§12) |
 | Q3 | Quando migrar PWA → iOS nativo? Sugestão: só se a fricção da PWA incomodar após 1 mês de uso real | Você | Não bloqueia |
 | Q4 | Vale conectar transações a `accounts` (Nubank Cartão, Dinheiro) na UI, ou `account_id` continua sempre nulo? | Você | Não bloqueia (tabela existe, ninguém escreve nela) |
-| Q5 | **Onde hospedar?** VM em VPS, PaaS com Docker, ou uma máquina em casa. A *forma* já está decidida (§5.1): `docker compose`, a mesma stack que roda hoje | Você | Bloqueia a Fase 11 — e é por isso que domínio, TLS e backup saíram do repositório na Fase 10 |
+| ~~Q5~~ | ~~**Onde hospedar?**~~ | — | Resolvida em 2026-08-15: **VM Always Free da Oracle Cloud** (Ampere A1, ARM, 2 OCPU / 12 GB, Ubuntu 24.04), rodando a mesma stack `docker compose`, com domínio `tinocot.com` e TLS pelo Caddy (§12, Fase 11). Procedimento em [`docs/DEPLOY.md`](./DEPLOY.md) |
 
 ## 12. Decisões assumidas (mude se discordar)
 
@@ -577,12 +605,27 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 - Parcelamentos: **uma transação por parcela**, na data em que a parcela cai na fatura.
 - Categorias **flat** (sem hierarquia) na v1.
 - Idioma da UI: **pt-BR**; código, commits e identificadores em **inglês** — inclusive os
-  segmentos de rota (`/transactions`, `/budgets`, `/categories`).
+  segmentos de rota (`/transactions`, `/todos`, `/categories`).
 - **Estorno abate o gasto da categoria** (Fase 1): o "gasto" de uma categoria no mês é
   `Σ despesas − Σ receitas lançadas nela`. É o que dá sentido à regra do §6.1 de registrar
-  o estorno como `income` na mesma categoria — senão a compra estornada continuaria
-  consumindo orçamento. Categorias de `kind = 'income'` (salário) ficam fora dessa conta e
-  aparecem em uma seção separada do dashboard.
+  o estorno como `income` na mesma categoria — senão a compra estornada continuaria pesando
+  no mês. Categorias de `kind = 'income'` (salário) ficam fora dessa conta e aparecem em uma
+  seção separada do dashboard.
+- **Orçamento saiu do produto** (Fase 12): ele era P0 do §8 e a resposta à pergunta "quanto
+  ainda posso gastar", e a resposta honesta depois de meses de uso é que manter um número
+  por categoria por mês é trabalho que a casa não faz — um orçamento desatualizado é pior
+  que nenhum, porque a barra vermelha mente. A tabela `budgets` foi derrubada junto com as
+  telas, e não ficou "código morto por precaução": o histórico está no git e a decisão está
+  aqui. A barra de cada linha do Resumo voltou a ser a **participação da categoria no mês**,
+  que é o que o dashboard já mostrava sempre que a categoria não tinha orçamento.
+- **A lista de tarefas não é um objeto financeiro** (Fase 12): título e concluída, nada mais
+  (§6.4). Prazo, valor e categoria foram considerados e ficaram de fora — com valor em
+  centavos ela viraria um "contas a pagar" paralelo às transações, com duas fontes da
+  verdade para o mesmo gasto. Se um dia isso for o produto, é uma feature de transações
+  (lançamento futuro), não da checklist.
+- **A tarefa inteira é um botão de submit** (Fase 12): marcar e desmarcar são Server Actions
+  em `<form>`, sem estado no client. O alvo do toque é a linha toda, e a tela funciona antes
+  de hidratar — que no celular é a maior parte do tempo em que se olha para ela.
 - **Categorias padrão são semeadas por usuário**, via trigger `seed_default_categories` em
   `auth.users`, e não em `seed.sql` — que não tem como conhecer o `user_id`. Depois de
   criadas são dados comuns: podem ser renomeadas, arquivadas ou excluídas.
@@ -611,9 +654,9 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
   aba de origem.
 - **A tab bar tem só substantivos; lançar é o FAB** (Fase 5): a aba de `/transactions` se
   chama **Extrato**, não "Lançar" — ela leva à lista do mês, e um rótulo em verbo prometia
-  um formulário. As cinco abas nomeiam *lugares* (Resumo, Tendências, Extrato, Orçamento,
-  Patrimônio); a única *ação* de rotina, registrar despesa, continua no botão "+" flutuante
-  do Resumo, que é o que o §9 exige (1 toque).
+  um formulário. As cinco abas nomeiam *lugares* (Resumo, Extrato, Patrimônio, Tendências,
+  Tarefas — a última era Orçamento até a Fase 12); a única *ação* de rotina, registrar
+  despesa, continua no botão "+" flutuante do Resumo, que é o que o §9 exige (1 toque).
 - **Regra salva é aplicada ao backlog** (Fase 3): salvar "uber → Transporte" categoriza na
   hora os lançamentos que já estavam esperando (`applyRuleToQueue`), não só os próximos
   imports — vale para regra criada pela fila, criada em Ajustes → Regras e também para
@@ -800,3 +843,60 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
   daltonismo (laranja↔verde, ΔE 4,8). Patrimônio é série única, então não há cor
   codificando nada e a linha volta a ser a forma certa. As duas telas usam o mesmo
   componente (`components/month-line-chart.tsx`).
+- **VM Always Free da Oracle, não PaaS nem casa** (Fase 11, resposta ao §11 Q5): 2 OCPU ARM
+  e 12 GB por R$ 0 indefinidamente é a única oferta gratuita em que a stack de quatro
+  containers cabe *inteira*, com disco de verdade e sem nada pausando por inatividade — que
+  era o defeito do Supabase hospedado (§5.1). Um PaaS transformaria o Postgres num add-on
+  pago ou efêmero, e aí a stack deixaria de ser a mesma nos dois lugares, que é a propriedade
+  que as Fases 9 e 10 compraram. Máquina em casa depende do link, do NAT e da energia da
+  casa. O custo real da escolha é operação: certificado, backup e atualização de SO são seus
+  — e é por isso que o resto desta fase existe.
+  Duas armadilhas do alvo, ambas registradas em `docs/DEPLOY.md`: a conta precisa estar em
+  **Pay As You Go** (continua R$ 0, e é o que tira a instância da política de recuperação por
+  ociosidade — um app de duas pessoas fica abaixo dos 20% de CPU/rede/memória que ela mira),
+  e a criação da A1 falha com *"Out of host capacity"* com frequência, que não é erro de
+  configuração.
+- **Domínio próprio com Caddy emitindo Let's Encrypt, não túnel** (Fase 11): `tinocot.com`,
+  com A/AAAA apontando direto para o IP da VM e o Caddy resolvendo o certificado em 80/443.
+  A alternativa era `cloudflared`, que dispensaria abrir porta — mas acrescenta um daemon na
+  VM e uma conta de terceiro no caminho de todo request, para resolver um problema
+  (não abrir portas) que a Security List já resolve. Vale a nota que custa uma tarde: o DNS
+  está na Cloudflare, e o registro tem que ficar em **"DNS only"** — com o proxy ligado, ela
+  intercepta o desafio HTTP-01 e o Caddy nunca emite nada.
+  O TLS não é enfeite: sem *secure context* o `public/sw.js` não registra e o iPhone não
+  instala a PWA, que é o caso de uso nº 1 (§8).
+- **A imagem é construída na VM** (Fase 11): `git pull` + `docker compose build` lá, com os
+  12 GB dando conta do build do Next com folga. `docker save | ssh docker load` do Mac
+  pouparia CPU da VM, mas criaria uma segunda origem para a imagem — o que roda em produção
+  deixaria de ser derivável do commit que está lá, e a pergunta "que versão está no ar?"
+  passaria a ter duas respostas possíveis.
+- **O que difere entre laptop e servidor é um arquivo, e a instalação sabe qual é ela**
+  (Fase 11): `deploy/docker-compose.server.yml` carrega a diferença inteira, e
+  `DEPLOY_TARGET=server` no `deploy/.env` da VM — escrito uma vez por
+  `gen-secrets.mjs --server` — é o que faz os scripts layerizarem esse arquivo sozinhos. A
+  alternativa era uma flag `--server` em cada comando; ela funciona até a primeira vez que
+  você entra na VM às duas da manhã e digita `pnpm stack logs` sem ela, contra o compose
+  errado. Consequência: `scripts/stack.mjs` é o mesmo script nos dois lugares, e
+  `scripts/server.mjs` só sabe alcançar a VM — o que fazer lá dentro continua tendo uma
+  implementação só.
+- **O deploy de manutenção tira dump só quando há migration pendente** (Fase 11): a regra é
+  "migration sobre dado real exige dump antes", não "todo deploy exige dump". Condicionar ao
+  que está pendente é o que faz `pnpm server` duas vezes seguidas não deixar rastro — e um
+  comando que produz lixo quando rodado duas vezes é um comando que as pessoas hesitam em
+  rodar. A poda dos dumps é por rótulo (`daily` 7, `pre-deploy` 7, `pre-restore` 3), senão
+  uma tarde de deploys comeria o histórico das noites.
+- **O restore substitui a instalação; não funde** (Fase 11): ele derruba `auth`, `rest` e
+  `web`, apaga `public`, `auth` e `supabase_migrations` e carrega o dump numa transação só.
+  É o que desarma o `provision_user`, que dispara no `insert` em `auth.users` e criaria um
+  segundo household ao trazer usuários por cima de um banco já provisionado por `db:owner`
+  — sem contar que um `pg_restore` completo carrega os dados *antes* de recriar os triggers,
+  então nem há trigger ligado na hora. A alternativa (restaurar só `public` e recriar as
+  contas com `db:owner`/`db:invite`) obrigaria a remapear todo `user_id` das linhas para os
+  novos UUIDs, que é trabalho de dados disfarçado de procedimento operacional.
+  Por consequência: o dump carrega `public` + `auth` + `supabase_migrations` e **não** os
+  roles nem as extensões, que vêm da imagem — então o destino tem que ser uma stack que já
+  subiu ao menos uma vez, nunca um Postgres pelado. As senhas atravessam (o hash bcrypt não
+  é assinado por nada); as sessões de outra instalação morrem, porque o `JWT_SECRET` é outro.
+- **`pnpm server`, não `pnpm deploy`** (Fase 11): `deploy` é um comando embutido do pnpm
+  (ele publica um workspace num diretório) e sombrearia o script inteiro — a colisão custa
+  uma tarde na primeira vez que acontece.

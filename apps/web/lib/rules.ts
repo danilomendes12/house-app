@@ -16,10 +16,7 @@ import { listUncategorizedForMatching, setTransactionsCategory } from './db/tran
  * @returns how many transactions left the queue.
  */
 export async function applyRuleToQueue(ruleId: string): Promise<number> {
-  const [rules, pending] = await Promise.all([
-    listCategoryRules(),
-    listUncategorizedForMatching(),
-  ]);
+  const [rules, pending] = await Promise.all([listCategoryRules(), listUncategorizedForMatching()]);
 
   const rule = rules.find((candidate) => candidate.id === ruleId);
   if (!rule) return 0;

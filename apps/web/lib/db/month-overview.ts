@@ -2,14 +2,11 @@ import 'server-only';
 
 import {
   ZERO_CENTS,
-  budgetStatus,
   percentOfCents,
   summarizeMonth,
-  type BudgetStatus,
   type Cents,
   type IsoMonth,
 } from '@finance/shared';
-import { listBudgetsForMonth } from './budgets';
 import { listCategories } from './categories';
 import { listTransactionsForMonth } from './transactions';
 import type { Category, Transaction } from './types';
@@ -20,9 +17,8 @@ export interface CategoryLine {
   category: Category | null;
   expenseCents: Cents;
   incomeCents: Cents;
-  /** Expenses minus refunds booked in the category — what the budget is measured against. */
+  /** Expenses minus refunds booked in the category — the number the row shows. */
   netCents: Cents;
-  budget: BudgetStatus;
   /** Share of the month's spending, `0`–`100`, for the bar next to the amount. */
   sharePercent: number;
   transactionCount: number;
@@ -34,10 +30,6 @@ export interface MonthOverview {
   expenseCents: Cents;
   /** Income booked in income categories (salary, refunds that are not category-specific). */
   incomeCents: Cents;
-  /** Total budgeted for the month across every category with a budget. */
-  budgetedCents: Cents;
-  /** `budgeted − spent in budgeted categories`; negative once the month is blown. */
-  budgetRemainingCents: Cents;
   expenseLines: CategoryLine[];
   incomeLines: CategoryLine[];
   transactions: Transaction[];
@@ -48,20 +40,16 @@ export interface MonthOverview {
  * Everything the monthly dashboard shows, in one pass.
  *
  * Aggregation happens in TypeScript rather than SQL on purpose: a single-user month is a
- * few hundred rows, and the rules that matter (refund netting, budget arithmetic) then
- * live in `@finance/shared`, unit-tested and shared with anything else that needs them.
+ * few hundred rows, and the rule that matters (refund netting) then lives in
+ * `@finance/shared`, unit-tested and shared with anything else that needs it.
  */
 export async function getMonthOverview(month: IsoMonth): Promise<MonthOverview> {
-  const [categories, transactions, budgets] = await Promise.all([
+  const [categories, transactions] = await Promise.all([
     listCategories({ includeArchived: true }),
     listTransactionsForMonth(month),
-    listBudgetsForMonth(month),
   ]);
 
   const totals = summarizeMonth(transactions);
-  const budgetByCategory = new Map(
-    budgets.map((budget) => [budget.categoryId, budget.amountCents]),
-  );
 
   const countByCategory = new Map<string | null, number>();
   for (const transaction of transactions) {
@@ -76,19 +64,16 @@ export async function getMonthOverview(month: IsoMonth): Promise<MonthOverview> 
 
   for (const category of categories) {
     const categoryTotals = totals.byCategory.get(category.id);
-    const budgetCents = budgetByCategory.get(category.id) ?? null;
 
-    // Archived and untouched categories only earn a row once they have a number to show.
-    if (!categoryTotals && budgetCents === null) continue;
-    if (category.isArchived && !categoryTotals) continue;
+    // A category only earns a row once it has a number to show.
+    if (!categoryTotals) continue;
 
     const line: CategoryLine = {
       key: category.id,
       category,
-      expenseCents: categoryTotals?.expenseCents ?? ZERO_CENTS,
-      incomeCents: categoryTotals?.incomeCents ?? ZERO_CENTS,
-      netCents: categoryTotals?.netCents ?? ZERO_CENTS,
-      budget: budgetStatus(categoryTotals?.netCents ?? ZERO_CENTS, budgetCents),
+      expenseCents: categoryTotals.expenseCents,
+      incomeCents: categoryTotals.incomeCents,
+      netCents: categoryTotals.netCents,
       sharePercent: 0,
       transactionCount: countByCategory.get(category.id) ?? 0,
     };
@@ -104,7 +89,6 @@ export async function getMonthOverview(month: IsoMonth): Promise<MonthOverview> 
       expenseCents: uncategorized.expenseCents,
       incomeCents: uncategorized.incomeCents,
       netCents: uncategorized.netCents,
-      budget: budgetStatus(uncategorized.netCents, null),
       sharePercent: 0,
       transactionCount: countByCategory.get(null) ?? 0,
     });
@@ -122,17 +106,10 @@ export async function getMonthOverview(month: IsoMonth): Promise<MonthOverview> 
     b.incomeCents === a.incomeCents ? 0 : b.incomeCents > a.incomeCents ? 1 : -1,
   );
 
-  const budgetedCents = budgets.reduce((total, budget) => total + budget.amountCents, ZERO_CENTS);
-  const spentAgainstBudgets = expenseLines
-    .filter((line) => line.budget.budgetCents !== null)
-    .reduce((total, line) => total + line.netCents, ZERO_CENTS);
-
   return {
     month,
     expenseCents,
     incomeCents,
-    budgetedCents,
-    budgetRemainingCents: budgetedCents - spentAgainstBudgets,
     expenseLines,
     incomeLines,
     transactions,

@@ -1,6 +1,6 @@
 export * from './money';
 export * from './date';
-export * from './budget';
+export * from './summary';
 export * from './trend';
 export * from './csv';
 export * from './import';

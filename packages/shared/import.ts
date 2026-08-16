@@ -12,7 +12,7 @@
 import { parseDelimited, normalizeText } from './csv';
 import { isIsoDate, toIsoDate, type IsoDate } from './date';
 import { ZERO_CENTS, parseCentsOrNull, toDecimalString, type Cents } from './money';
-import type { TransactionType } from './budget';
+import type { TransactionType } from './summary';
 
 /** Header aliases, normalized by {@link normalizeText}. Nubank's export plus pt-BR variants. */
 const HEADER_ALIASES = {

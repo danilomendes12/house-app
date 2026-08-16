@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Plus } from 'lucide-react';
-import { ZERO_CENTS, formatCents, percentOfCents } from '@finance/shared';
+import { ZERO_CENTS, formatCents } from '@finance/shared';
 import { CategoryIcon } from '@/components/category-icon';
 import { EmptyState, cardClass } from '@/components/fields';
 import { MonthNav } from '@/components/month-nav';
@@ -13,11 +13,10 @@ import { resolveMonth } from '@/lib/month-param';
 export const metadata = { title: 'Resumo · Finanças' };
 
 /**
- * Without a budget the bar shows the category's share of the month, which is the
- * "donut/lista" breakdown; with one it shows how much of the budget is gone.
+ * The bar is the category's share of the month — the "donut/lista" breakdown of SPEC §9,
+ * drawn as a row so the list works one-handed on the phone.
  */
 function ExpenseLine({ line }: { line: CategoryLine }) {
-  const { budget } = line;
   const name = line.category?.name ?? 'A categorizar';
 
   return (
@@ -39,26 +38,10 @@ function ExpenseLine({ line }: { line: CategoryLine }) {
 
       <div className="mt-2">
         <ProgressBar
-          percent={budget.state === 'no-budget' ? line.sharePercent : budget.percentUsed}
-          isOver={budget.state === 'over'}
-          color={budget.state === 'no-budget' ? (line.category?.color ?? null) : null}
-          label={`${name}: ${budget.state === 'no-budget' ? 'participação no mês' : 'uso do orçamento'}`}
+          percent={line.sharePercent}
+          color={line.category?.color ?? null}
+          label={`${name}: participação no mês`}
         />
-
-        {budget.state !== 'no-budget' && budget.remainingCents !== null ? (
-          <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-            {budget.state === 'over' ? (
-              <span className="text-[var(--color-danger)]">
-                {formatCents(budget.overCents)} acima
-              </span>
-            ) : (
-              <span className="text-[var(--color-positive)]">
-                {formatCents(budget.remainingCents)} restantes
-              </span>
-            )}{' '}
-            de {formatCents(budget.budgetCents ?? ZERO_CENTS)}
-          </p>
-        ) : null}
       </div>
     </li>
   );
@@ -71,13 +54,6 @@ export default async function DashboardPage({
 }) {
   const month = resolveMonth((await searchParams).month);
   const [overview, netWorth] = await Promise.all([getMonthOverview(month), getNetWorthOverview()]);
-
-  const hasBudgets = overview.budgetedCents > ZERO_CENTS;
-  const isOverBudget = overview.budgetRemainingCents < ZERO_CENTS;
-  const budgetUsedPercent = percentOfCents(
-    overview.budgetedCents - overview.budgetRemainingCents,
-    overview.budgetedCents,
-  );
 
   return (
     <section className="space-y-4">
@@ -97,38 +73,6 @@ export default async function DashboardPage({
             </span>
           </p>
         ) : null}
-
-        {hasBudgets ? (
-          <div className="mt-4 space-y-1.5">
-            <ProgressBar
-              percent={budgetUsedPercent}
-              isOver={isOverBudget}
-              label="Uso do orçamento total"
-            />
-            <p className="text-xs text-[var(--color-ink-muted)]">
-              {isOverBudget ? (
-                <span className="text-[var(--color-danger)]">
-                  {formatCents(-overview.budgetRemainingCents)} acima
-                </span>
-              ) : (
-                <span className="text-[var(--color-positive)]">
-                  {formatCents(overview.budgetRemainingCents)} restantes
-                </span>
-              )}{' '}
-              de {formatCents(overview.budgetedCents)} orçados
-            </p>
-          </div>
-        ) : (
-          <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
-            Nenhum orçamento definido para este mês.{' '}
-            <Link
-              href={{ pathname: '/budgets', query: { month } }}
-              className="text-[var(--color-brand)] underline-offset-2 hover:underline"
-            >
-              Definir agora
-            </Link>
-          </p>
-        )}
       </div>
 
       {/* Patrimônio in one line — the headline of the Patrimônio tab, no chart, no per-asset

@@ -1,11 +1,11 @@
 /**
- * Monthly aggregation and budget arithmetic (SPEC §6.1).
+ * Monthly aggregation (SPEC §6.1).
  *
  * Pure functions over plain values: the database only ever returns rows, everything the
  * dashboard shows is derived here so it can be tested without a database.
  */
 
-import { ZERO_CENTS, percentOfCents, type Cents } from './money';
+import { ZERO_CENTS, type Cents } from './money';
 
 export type CategoryKind = 'expense' | 'income';
 export type TransactionType = 'expense' | 'income';
@@ -68,56 +68,4 @@ export function summarizeMonth(transactions: Iterable<CategorizedAmount>): Month
   }
 
   return { expenseCents, incomeCents, byCategory };
-}
-
-export type BudgetState = 'no-budget' | 'within' | 'over';
-
-export interface BudgetStatus {
-  /** Net spending in the category (see {@link CategoryTotals.netCents}). */
-  spentCents: Cents;
-  budgetCents: Cents | null;
-  /** `budget − spent`; negative once the budget is blown. `null` without a budget. */
-  remainingCents: Cents | null;
-  /** How much the budget was exceeded by, `0` while still within it. */
-  overCents: Cents;
-  /** `0`–`100+`, for the progress bar. `0` without a budget. */
-  percentUsed: number;
-  state: BudgetState;
-}
-
-/**
- * "How much can I still spend here?" — the number the dashboard exists to answer.
- *
- * A category with no budget for the month gets `state: 'no-budget'` and no progress bar,
- * rather than a fake 0-budget that would read as instantly overspent.
- */
-export function budgetStatus(spentCents: Cents, budgetCents: Cents | null): BudgetStatus {
-  if (budgetCents === null) {
-    return {
-      spentCents,
-      budgetCents: null,
-      remainingCents: null,
-      overCents: ZERO_CENTS,
-      percentUsed: 0,
-      state: 'no-budget',
-    };
-  }
-
-  const remainingCents = budgetCents - spentCents;
-  const isOver = remainingCents < ZERO_CENTS;
-
-  return {
-    spentCents,
-    budgetCents,
-    remainingCents,
-    overCents: isOver ? -remainingCents : ZERO_CENTS,
-    // percentOfCents cannot divide by a zero budget; any spending against one is 100% used.
-    percentUsed:
-      budgetCents === ZERO_CENTS
-        ? spentCents > ZERO_CENTS
-          ? 100
-          : 0
-        : Math.max(0, percentOfCents(spentCents, budgetCents)),
-    state: isOver ? 'over' : 'within',
-  };
 }

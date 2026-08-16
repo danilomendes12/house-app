@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The one way to run this project.
+ * The one way to run this project — here and on the server.
  *
  *   pnpm dev                # the everyday command: stack up, then Next with hot reload
  *   pnpm stack up           # only the stack (Postgres + GoTrue + PostgREST + Caddy)
@@ -12,24 +12,43 @@
  *   pnpm stack types        # regenerate apps/web/lib/supabase/database.types.ts
  *
  * `up` is idempotent from any state — a re-run after a crash resumes where it stopped, and
- * it is the same sequence a server would follow: secrets → db + auth → migrations → the
- * rest → owner user. The database survives in a named volume.
+ * it is the same sequence a server follows: secrets → db + auth → migrations → the rest →
+ * owner user. The database survives in a named volume.
  *
- * Only the services run in Docker. Next runs on the host, on purpose: a bind mount on
- * macOS makes hot reload noticeably slower, and the app is the one piece that has no
+ * Only the services run in Docker *here*. Next runs on the host, on purpose: a bind mount
+ * on macOS makes hot reload noticeably slower, and the app is the one piece that has no
  * business being pinned to an image while you are writing it. `pnpm stack prod` is how you
  * check that the image that will ship still boots.
+ *
+ * On the VM this same script is what runs (`pnpm server` drives it over SSH), and `up`
+ * gains three things — all of them read from the installation's own deploy/.env, so there
+ * is no flag to remember at 2am:
+ *
+ *   * the docker-compose.server.yml override, which publishes 80/443 and requires DOMAIN;
+ *   * the `web` container as a first-class service, built and waited on like the rest;
+ *   * a dump before applying migrations, and only when there are migrations to apply.
  */
 
-import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-const deployDir = resolve(repoRoot, 'deploy');
-const envFile = resolve(deployDir, '.env');
-const dbVolume = 'financas_db-data';
+import { psqlQuery } from './lib/db.mjs';
+import {
+  allProfiles,
+  createCompose,
+  ensureDocker,
+  envFile,
+  fail,
+  isListening,
+  isServerInstall,
+  migrationVersions,
+  readEnvFile,
+  repoRoot,
+  run,
+  step,
+} from './lib/proc.mjs';
+
 const typesFile = resolve(repoRoot, 'apps/web/lib/supabase/database.types.ts');
 // Pre-Fase 10 leftover: env used to be duplicated here. Next still reads it if it exists,
 // which would silently point the app at a stack that no longer runs.
@@ -42,53 +61,10 @@ const apiPort = process.env.SUPABASE_API_PORT ?? '8000';
 const dbPort = process.env.POSTGRES_PORT ?? '5432';
 const studioPort = process.env.STUDIO_PORT ?? '54323';
 
-function run(command, args, options = {}) {
-  return spawnSync(command, args, { encoding: 'utf8', ...options });
-}
-
-function runCompose(args, options = {}) {
-  return run('docker', ['compose', ...args], { cwd: deployDir, stdio: 'inherit', ...options });
-}
-
-function step(message) {
-  console.log(`\x1b[36m▸\x1b[0m ${message}`);
-}
-
-function fail(message) {
-  console.error(`\x1b[31m✗\x1b[0m ${message}`);
-  process.exit(1);
-}
-
-function sleep(ms) {
-  return new Promise((done) => setTimeout(done, ms));
-}
-
-/** The `KEY=value` pairs of an env file, without touching process.env. */
-function readEnvFile(path) {
-  const entries = readFileSync(path, 'utf8')
-    .split('\n')
-    .map((line) => line.match(/^([A-Z0-9_]+)=(.*)$/))
-    .filter(Boolean)
-    .map(([, key, value]) => [key, value.trim()]);
-  return Object.fromEntries(entries);
-}
-
-async function ensureDocker() {
-  if (run('docker', ['info']).status === 0) return;
-
-  if (process.platform !== 'darwin') {
-    fail('Docker is not running. Start it and try again.');
-  }
-
-  step('Docker is down — starting Docker Desktop…');
-  run('open', ['-a', 'Docker']);
-
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await sleep(3000);
-    if (run('docker', ['info']).status === 0) return;
-  }
-  fail('Docker did not come up in 90s. Start Docker Desktop manually and try again.');
-}
+// Whether this checkout *is* the server. Re-read after ensureEnv, because on a brand new VM
+// the file that answers this is written moments before the first compose call.
+let server = existsSync(envFile) && isServerInstall(readEnvFile(envFile));
+const runCompose = (composeArgs, options) => createCompose(server)(composeArgs, options);
 
 /**
  * deploy/.env, generated on the first run and never again — it is the only env file in the
@@ -96,23 +72,25 @@ async function ensureDocker() {
  * secrets and ports, nothing else: who the owner is lives in the database.
  */
 function ensureEnv() {
-  if (existsSync(envFile)) return readEnvFile(envFile);
+  if (!existsSync(envFile)) {
+    step('Generating deploy/.env…');
+    const generated = run('node', [resolve(repoRoot, 'scripts/gen-secrets.mjs'), envFile]);
+    if (generated.status !== 0) fail(generated.stderr || 'gen-secrets.mjs failed.');
+  }
 
-  step('Generating deploy/.env…');
-  const generated = run('node', [resolve(repoRoot, 'scripts/gen-secrets.mjs'), envFile]);
-  if (generated.status !== 0) fail(generated.stderr || 'gen-secrets.mjs failed.');
-
-  return readEnvFile(envFile);
+  const env = readEnvFile(envFile);
+  server = isServerInstall(env);
+  return env;
 }
 
 /** Whether the Postgres volume already exists — i.e. this is not a first boot. */
 function databaseExists() {
-  return run('docker', ['volume', 'inspect', dbVolume]).status === 0;
+  return run('docker', ['volume', 'inspect', 'financas_db-data']).status === 0;
 }
 
 /** Ports already published by this stack's own containers — a re-run reuses them. */
 function ownPublishedPorts() {
-  const result = run('docker', ['compose', 'ps', '--format', 'json'], { cwd: deployDir });
+  const result = runCompose(['ps', '--format', 'json'], { stdio: ['ignore', 'pipe', 'pipe'] });
   if (result.status !== 0) return new Set();
 
   const ports = new Set();
@@ -126,15 +104,6 @@ function ownPublishedPorts() {
     }
   }
   return ports;
-}
-
-/**
- * Whether something is *listening* on the port. `-sTCP:LISTEN` is what makes this true:
- * without it lsof also reports the TIME_WAIT sockets a recent request left behind, and the
- * stack would refuse to start over a port nothing actually holds.
- */
-function isListening(port) {
-  return run('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN']).stdout.trim().length > 0;
 }
 
 /**
@@ -170,20 +139,58 @@ const dbUrl = (env) =>
   `postgresql://postgres:${encodeURIComponent(env.POSTGRES_PASSWORD)}@127.0.0.1:${dbPort}/postgres?sslmode=disable`;
 
 /**
+ * The migrations this checkout carries that the database has not seen.
+ *
+ * `null` when the ledger cannot be read at all, which on a fresh volume means "all of
+ * them" and is handled by the caller as such. Used for one decision only: whether a deploy
+ * is about to change the schema, and therefore whether it owes the database a dump first.
+ */
+function pendingMigrations() {
+  const applied = psqlQuery(
+    runCompose,
+    'select version from supabase_migrations.schema_migrations',
+  );
+  if (applied === null) return null;
+  const seen = new Set(applied.split('\n').filter(Boolean));
+  return migrationVersions().filter((version) => !seen.has(version));
+}
+
+/**
+ * A migration applied over real data with no dump behind it is the failure this whole phase
+ * exists to prevent. Only on the server, and only when something is actually pending — so
+ * two deploys in a row without a new commit leave no trace, which is what makes `pnpm
+ * server` safe to run twice.
+ */
+function backupBeforeMigrations() {
+  const pending = pendingMigrations();
+  if (!pending || pending.length === 0) return;
+
+  step(`${pending.length} migration(s) pendente(s) — dump antes de aplicar…`);
+  const dumped = run(
+    'node',
+    [resolve(repoRoot, 'scripts/db-backup.mjs'), '--label', 'pre-deploy', '--keep', '7'],
+    { cwd: repoRoot, stdio: 'inherit' },
+  );
+  if (dumped.status !== 0) fail('Não consegui tirar o dump antes da migration — parando aqui.');
+}
+
+/**
  * The Supabase CLI stays the only owner of the schema (CLAUDE.md), so the migrations are
  * pushed from here over the loopback port instead of by some second runner inside compose.
  *
  * `sslmode=disable`: the Postgres in compose speaks no TLS, and the connection never leaves
- * the machine. The seed only runs on a fresh database — re-applying it on every boot would
- * duplicate rows the moment seed.sql stops being comments.
+ * the machine — on the VM this port is published on 127.0.0.1 only, which is also how
+ * remote migrations reach it, through an SSH tunnel. The seed only runs on a fresh database
+ * — re-applying it on every boot would duplicate rows the moment seed.sql stops being
+ * comments.
  */
 function pushMigrations(env, fresh) {
   step(fresh ? 'Applying migrations and seed…' : 'Applying new migrations…');
 
-  const args = ['exec', 'supabase', 'db', 'push', '--db-url', dbUrl(env), '--yes'];
-  if (fresh) args.push('--include-seed');
+  const pushArgs = ['exec', 'supabase', 'db', 'push', '--db-url', dbUrl(env), '--yes'];
+  if (fresh) pushArgs.push('--include-seed');
 
-  const pushed = run('pnpm', args, { cwd: repoRoot, stdio: 'inherit' });
+  const pushed = run('pnpm', pushArgs, { cwd: repoRoot, stdio: 'inherit' });
   if (pushed.status !== 0) fail('supabase db push failed.');
 }
 
@@ -276,10 +283,17 @@ async function up() {
     fail('db/auth did not become healthy. Check: pnpm stack logs db');
   }
 
+  if (server && !fresh) backupBeforeMigrations();
   pushMigrations(env, fresh);
 
-  step('Starting rest and caddy…');
-  if (runCompose(['up', '-d', '--wait']).status !== 0) {
+  // On the server the app is one of the services: built from the commit that is checked out
+  // there and waited on like everything else, so a deploy that ships a broken image fails
+  // here instead of in the browser.
+  step(server ? 'Building the app and starting rest, caddy and web…' : 'Starting rest and caddy…');
+  const rest = server
+    ? ['--profile', 'web', 'up', '-d', '--wait', '--build']
+    : ['up', '-d', '--wait'];
+  if (runCompose(rest).status !== 0) {
     fail('The stack did not come up healthy. Check: pnpm stack logs');
   }
 
@@ -288,13 +302,14 @@ async function up() {
 }
 
 async function banner(env, lastLine) {
+  const domain = readEnvFile(envFile).DOMAIN;
   console.log(
     [
       '',
       '\x1b[32m✓ stack up\x1b[0m',
-      `  app     http://localhost:${webPort}`,
+      `  app     ${server && domain ? `https://${domain}` : `http://localhost:${webPort}`}`,
       `  login   ${await ownerEmail(env)} + senha (pnpm db:password <email> gera outra)`,
-      `  studio  pnpm stack studio`,
+      ...(server ? [] : ['  studio  pnpm stack studio']),
       '',
       `  ${lastLine}`,
       '',
@@ -316,6 +331,13 @@ async function appAlreadyServing() {
 }
 
 async function dev() {
+  if (server) {
+    fail(
+      'Esta instalação é o servidor (DEPLOY_TARGET=server em deploy/.env).\n' +
+        'Aqui o app roda em container, não com hot reload: use `pnpm stack up`.',
+    );
+  }
+
   const env = await up();
 
   // Starting a second dev server would silently land on port 3001 and then die, so bail
@@ -344,20 +366,25 @@ async function main() {
 
     case 'up': {
       const env = await up();
-      await banner(env, 'Rode `pnpm dev` para subir o Next com hot reload.');
+      await banner(
+        env,
+        server
+          ? 'Tudo em container. `pnpm server logs` daqui, `pnpm stack logs` aí dentro.'
+          : 'Rode `pnpm dev` para subir o Next com hot reload.',
+      );
       return;
     }
 
     case 'down':
       await ensureDocker();
       step('Stopping the stack (the data stays)…');
-      runCompose(['--profile', 'prod', '--profile', 'studio', 'down']);
+      runCompose([...allProfiles, 'down']);
       return;
 
     case 'reset':
       await ensureDocker();
       step('Stopping the stack and destroying the database…');
-      runCompose(['--profile', 'prod', '--profile', 'studio', 'down', '-v']);
+      runCompose([...allProfiles, 'down', '-v']);
       console.log('Rode `pnpm dev` para recriar tudo do zero.');
       return;
 
@@ -376,7 +403,7 @@ async function main() {
         fail(`A porta ${webPort} está ocupada — encerre o \`pnpm dev\` antes.`);
       }
       step('Building the app image and starting it…');
-      if (runCompose(['--profile', 'prod', 'up', '-d', '--wait', '--build']).status !== 0) {
+      if (runCompose(['--profile', 'web', 'up', '-d', '--wait', '--build']).status !== 0) {
         fail('The app image did not come up healthy. Check: pnpm stack logs web');
       }
       await banner(
@@ -388,7 +415,7 @@ async function main() {
 
     case 'logs':
       await ensureDocker();
-      runCompose(['--profile', 'prod', '--profile', 'studio', 'logs', '-f', ...args]);
+      runCompose([...allProfiles, 'logs', '-f', ...args]);
       return;
 
     case 'types': {
@@ -424,6 +451,8 @@ async function main() {
           '  pnpm dev                # stack + Next com hot reload',
           '  pnpm stack up|down|reset',
           '  pnpm stack studio|prod|logs|types',
+          '',
+          '  pnpm server             # o mesmo, na VM (docs/DEPLOY.md)',
         ].join('\n'),
       );
   }

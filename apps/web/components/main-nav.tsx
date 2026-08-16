@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutGrid, Receipt, Target, TrendingUp, Wallet } from 'lucide-react';
+import { LayoutGrid, ListChecks, Receipt, TrendingUp, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 const items: {
-  href: '/' | '/trends' | '/transactions' | '/budgets' | '/assets';
+  href: '/' | '/trends' | '/transactions' | '/todos' | '/assets';
   label: string;
   /** Tab-bar label on the phone: five tabs share ~75px each, "Extrato mensal" wraps. */
   shortLabel?: string;
@@ -17,7 +17,7 @@ const items: {
   { href: '/transactions', label: 'Extrato mensal', shortLabel: 'Extrato', icon: Receipt },
   { href: '/assets', label: 'Patrimônio', icon: Wallet },
   { href: '/trends', label: 'Tendências', icon: TrendingUp },
-  { href: '/budgets', label: 'Orçamento', icon: Target },
+  { href: '/todos', label: 'Tarefas', icon: ListChecks },
 ];
 
 /**

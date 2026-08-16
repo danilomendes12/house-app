@@ -237,54 +237,6 @@ export type Database = {
           },
         ]
       }
-      budgets: {
-        Row: {
-          amount_cents: number
-          category_id: string
-          created_at: string
-          household_id: string
-          id: string
-          month: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          amount_cents: number
-          category_id: string
-          created_at?: string
-          household_id: string
-          id?: string
-          month: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          amount_cents?: number
-          category_id?: string
-          created_at?: string
-          household_id?: string
-          id?: string
-          month?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "budgets_category_id_fkey"
-            columns: ["category_id"]
-            isOneToOne: false
-            referencedRelation: "categories"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "budgets_household_id_fkey"
-            columns: ["household_id"]
-            isOneToOne: false
-            referencedRelation: "households"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       categories: {
         Row: {
           color: string | null
@@ -429,6 +381,44 @@ export type Database = {
           name?: string
         }
         Relationships: []
+      }
+      todos: {
+        Row: {
+          created_at: string
+          done_at: string | null
+          household_id: string
+          id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          done_at?: string | null
+          household_id: string
+          id?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          done_at?: string | null
+          household_id?: string
+          id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "todos_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       transactions: {
         Row: {

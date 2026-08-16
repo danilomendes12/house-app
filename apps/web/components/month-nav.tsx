@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { addMonths, currentIsoMonth, formatIsoMonth, type IsoMonth } from '@finance/shared';
 
 /** Route the arrows navigate within — the page keeps its month across prev/next. */
-export type MonthRoute = '/' | '/transactions' | '/budgets' | '/trends' | '/assets';
+export type MonthRoute = '/' | '/transactions' | '/trends' | '/assets';
 
 const arrowClass =
   'grid size-10 shrink-0 place-items-center rounded-full border border-[var(--color-line)] bg-[var(--color-surface)] transition active:scale-95';

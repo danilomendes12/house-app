@@ -1,0 +1,46 @@
+# What is different on the server, and nothing else.
+#
+# Layered on top of docker-compose.yml — never used alone:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.server.yml --profile web up -d
+#
+# You do not type that: `pnpm stack up` on the VM adds both files by itself, because the
+# VM's deploy/.env says DEPLOY_TARGET=server. Written by `scripts/gen-secrets.mjs --server`
+# during `pnpm server init`.
+#
+# Keeping the difference in one small file is the point: images, wiring, secrets, healthchecks
+# and the order of boot are the same objects here and on the laptop, so "works locally" keeps
+# meaning something.
+
+services:
+  caddy:
+    ports:
+      # The only two ports this project opens to the internet. Compose appends to the base
+      # list, so :8000 is still there — and still on 127.0.0.1, still private. The Supabase
+      # API is never published: what answers on 443 is the app, and the app talks to the API
+      # over the compose network.
+      - '0.0.0.0:80:80'
+      - '0.0.0.0:443:443'
+      # HTTP/3. Worth it on a phone on mobile data, which is the main way this app is used.
+      - '0.0.0.0:443:443/udp'
+    environment:
+      # No default on purpose: without a name there is nothing to issue a certificate for,
+      # and a server quietly serving plain HTTP is worse than one that refuses to start.
+      # It is also what the PWA depends on — no HTTPS, no secure context, no service worker,
+      # no "Adicionar à Tela de Início" (SPEC §8).
+      DOMAIN: ${DOMAIN:?defina DOMAIN em deploy/.env}
+
+  auth:
+    environment:
+      # GoTrue's notion of where the app lives. Nothing builds links today (there is no
+      # SMTP and no recovery flow — SPEC §12), but leaving localhost:3000 on a server is a
+      # lie waiting for the first feature that reads it.
+      GOTRUE_SITE_URL: https://${DOMAIN:?}
+
+  web:
+    # No ports: the app is reached through Caddy, on the compose network, and publishing it
+    # would be a second door into the same room. The base file's 127.0.0.1:3000 stays — it
+    # is loopback, so it is reachable only over an SSH tunnel, which is what you want when
+    # you need to look at the app without going through the certificate.
+    environment:
+      SUPABASE_URL: http://caddy:8000

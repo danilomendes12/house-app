@@ -89,7 +89,7 @@ export function monthOf(date: IsoDate): IsoMonth {
   return date.slice(0, 7);
 }
 
-/** `'2026-08'` (or any date in it) → `'2026-08-01'` — the shape stored in `budgets.month`. */
+/** `'2026-08'` (or any date in it) → `'2026-08-01'` — the first day of the month. */
 export function monthStart(monthOrDate: IsoMonth | IsoDate): IsoDate {
   return `${monthOrDate.slice(0, 7)}-01`;
 }

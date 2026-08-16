@@ -52,7 +52,7 @@ export default async function EditCategoryPage({ params }: { params: Promise<{ i
           <p className="mt-1.5 text-xs text-[var(--color-ink-muted)]">
             {usage === 0
               ? 'Nenhum lançamento usa esta categoria.'
-              : `${usage} ${usage === 1 ? 'lançamento passa' : 'lançamentos passam'} para “a categorizar”, e os orçamentos da categoria são apagados.`}
+              : `${usage} ${usage === 1 ? 'lançamento passa' : 'lançamentos passam'} para “a categorizar”.`}
           </p>
         </form>
       </div>

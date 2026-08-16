@@ -5,8 +5,8 @@ import { absCents, formatCents, type Change } from '@finance/shared';
  * Month-over-month movement, as an amount and (when it means anything) a percentage.
  *
  * Colour follows the *meaning*, not the sign: spending more is the bad direction, so a
- * rise is red and a fall is green — the same convention the budget bar already uses. The
- * arrow icon and the sign carry the direction too, so nothing is encoded by colour alone.
+ * rise is red and a fall is green. The arrow icon and the sign carry the direction too, so
+ * nothing is encoded by colour alone.
  */
 
 const percentFormatter = new Intl.NumberFormat('pt-BR', {

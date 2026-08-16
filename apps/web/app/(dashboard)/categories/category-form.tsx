@@ -47,7 +47,7 @@ export function CategoryForm({ values }: { values: CategoryFormValues }) {
         />
       </Field>
 
-      <Field label="Tipo" htmlFor="kind" hint="Receitas não entram no orçamento de gastos.">
+      <Field label="Tipo" htmlFor="kind" hint="Receitas aparecem em uma seção separada do Resumo.">
         <select id="kind" name="kind" defaultValue={values.kind} className={selectClass}>
           <option value="expense">Despesa</option>
           <option value="income">Receita</option>

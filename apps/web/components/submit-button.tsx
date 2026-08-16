@@ -2,10 +2,17 @@
 
 import { useFormStatus } from 'react-dom';
 
+/**
+ * Sizing lives here rather than in the shared base so `ghost` can start from nothing:
+ * `h-12` in the base would fight a list row that has to grow with wrapped text, and which
+ * of the two heights wins is a matter of Tailwind's output order, not of this string.
+ */
 const variants = {
-  primary: 'bg-[var(--color-brand)] text-white',
-  secondary: 'border border-[var(--color-line)] bg-[var(--color-surface)]',
-  danger: 'border border-[var(--color-danger)]/40 text-[var(--color-danger)]',
+  primary: 'h-12 px-4 bg-[var(--color-brand)] text-white',
+  secondary: 'h-12 px-4 border border-[var(--color-line)] bg-[var(--color-surface)]',
+  danger: 'h-12 px-4 border border-[var(--color-danger)]/40 text-[var(--color-danger)]',
+  /** No chrome and no size of its own — for an icon or a whole list row that submits. */
+  ghost: '',
 } as const;
 
 /**
@@ -20,6 +27,7 @@ export function SubmitButton({
   formAction,
   name,
   value,
+  label,
 }: {
   children: React.ReactNode;
   pendingLabel?: string;
@@ -28,6 +36,8 @@ export function SubmitButton({
   formAction?: (formData: FormData) => void | Promise<void>;
   name?: string;
   value?: string;
+  /** Accessible name, for buttons whose content is an icon or is ambiguous out of context. */
+  label?: string;
 }) {
   const { pending } = useFormStatus();
 
@@ -38,7 +48,8 @@ export function SubmitButton({
       formAction={formAction}
       name={name}
       value={value}
-      className={`h-12 rounded-xl px-4 text-base font-medium transition active:scale-[0.99] disabled:opacity-60 ${variants[variant]} ${className}`}
+      aria-label={label}
+      className={`rounded-xl text-base font-medium transition active:scale-[0.99] disabled:opacity-60 ${variants[variant]} ${className}`}
     >
       {pending && pendingLabel ? pendingLabel : children}
     </button>

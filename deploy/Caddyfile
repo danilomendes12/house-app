@@ -1,16 +1,21 @@
-# Gives Supabase's API a single origin, on :8000.
+# Two blocks, two audiences.
 #
-# `supabase-js` is built around one base URL and calls /auth/v1/token and /rest/v1/<table>
-# under it — but those are two different containers. This joins them, and it is what
-# replaces Kong: the API is not public, the `anon` role holds no grant (the migrations
-# revoke everything) and PostgREST validates the JWT by itself.
+# :8000 is Supabase's API, private on every installation. `supabase-js` is built around one
+# base URL and calls /auth/v1/token and /rest/v1/<table> under it — but those are two
+# different containers. This joins them, and it is what replaces Kong: the API is not
+# public, the `anon` role holds no grant (the migrations revoke everything) and PostgREST
+# validates the JWT by itself. Both services serve at the root, so the prefix has to be
+# *removed* — `handle_path` does that, `handle` would not.
 #
-# Both services serve at the root, so the prefix has to be *removed* — `handle_path` does
-# that, `handle` would not.
+# {$DOMAIN} is the app, and the only thing this project exposes to the internet. Caddy gets
+# and renews the certificate itself over ACME on 80/443, which is the whole reason it is
+# here rather than a plain proxy — and the reason the PWA installs at all: no HTTPS, no
+# secure context, no service worker, no icon on the iPhone home screen (SPEC §8).
 #
-# Not here yet: the public HTTPS block that fronts the app on a server. It comes back when
-# the hosting is chosen (SPEC §11, Q5); until then the app is served by `next dev` on the
-# host, and there is no certificate to issue.
+# Locally DOMAIN is unset and this falls back to `localhost`, for which Caddy uses its own
+# internal CA and talks to no one. Ports 80/443 are not published there either
+# (docker-compose.server.yml adds them), so the block simply sits idle.
+
 :8000 {
 	handle_path /auth/v1/* {
 		reverse_proxy auth:9999
@@ -23,4 +28,12 @@
 	handle {
 		respond "not found" 404
 	}
+}
+
+{$DOMAIN:localhost} {
+	# Everything, to the app. Nothing here routes to `auth` or `rest`: the browser never
+	# talks to Supabase in this project — every read and write is a Server Component, Server
+	# Action or Route Handler (SPEC §5.4) — so publishing the API would open a door that no
+	# client uses.
+	reverse_proxy web:3000
 }

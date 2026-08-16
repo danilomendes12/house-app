@@ -1,0 +1,23 @@
+# The nightly dump. Installed by `pnpm server init`, which substitutes __DEPLOY_PATH__ and
+# __DEPLOY_USER__ — this file is a template, not a unit; systemd never reads it from here.
+#
+# A timer and not cron: `systemctl status financas-backup` says when it last ran and what it
+# printed, and `journalctl -u financas-backup` keeps the history. Cron would mail it to a
+# mailbox that does not exist on this VM.
+
+[Unit]
+Description=Dump diário do banco do Finanças
+Documentation=file://__DEPLOY_PATH__/docs/DEPLOY.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=__DEPLOY_USER__
+WorkingDirectory=__DEPLOY_PATH__
+# Node from NodeSource, invoked directly: pnpm would need corepack's shims in a PATH that
+# systemd does not build the way a login shell does.
+ExecStart=/usr/bin/node scripts/db-backup.mjs --label daily --keep 7
+# The dump is I/O against a database two people use; nothing here is urgent.
+Nice=10
+IOSchedulingClass=idle
