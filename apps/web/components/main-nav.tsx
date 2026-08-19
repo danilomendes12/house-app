@@ -2,22 +2,31 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutGrid, ListChecks, Receipt, TrendingUp, Wallet } from 'lucide-react';
+import { LayoutGrid, ListChecks, Receipt, ShoppingCart, TrendingUp, Wallet } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 const items: {
-  href: '/' | '/trends' | '/transactions' | '/todos' | '/assets';
+  href: '/' | '/trends' | '/transactions' | '/todos' | '/assets' | '/shopping/home';
   label: string;
-  /** Tab-bar label on the phone: five tabs share ~75px each, "Extrato mensal" wraps. */
+  /**
+   * Tab-bar label on the phone. Six tabs share ~62px each, so anything past ~8 characters
+   * needs a short form here — at five tabs only "Extrato mensal" did.
+   */
   shortLabel?: string;
+  /**
+   * What marks the tab active, when that is broader than `href` itself. Compras opens on
+   * one of its two lists but owns both `/shopping/*` routes.
+   */
+  prefix?: string;
   icon: LucideIcon;
 }[] = [
   { href: '/', label: 'Resumo', icon: LayoutGrid },
   // "Extrato mensal", not "Lançar": the tab leads to the month's list. Entry is the FAB.
   { href: '/transactions', label: 'Extrato mensal', shortLabel: 'Extrato', icon: Receipt },
-  { href: '/assets', label: 'Patrimônio', icon: Wallet },
-  { href: '/trends', label: 'Tendências', icon: TrendingUp },
+  { href: '/assets', label: 'Patrimônio', shortLabel: 'Patrim.', icon: Wallet },
+  { href: '/trends', label: 'Tendências', shortLabel: 'Tend.', icon: TrendingUp },
   { href: '/todos', label: 'Tarefas', icon: ListChecks },
+  { href: '/shopping/home', label: 'Compras', prefix: '/shopping', icon: ShoppingCart },
 ];
 
 /**
@@ -34,8 +43,8 @@ export function MainNav() {
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <ul className="mx-auto flex w-full max-w-3xl items-stretch sm:gap-1 sm:px-4">
-        {items.map(({ href, label, shortLabel, icon: Icon }) => {
-          const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href);
+        {items.map(({ href, label, shortLabel, prefix, icon: Icon }) => {
+          const isActive = href === '/' ? pathname === '/' : pathname.startsWith(prefix ?? href);
 
           return (
             <li key={href} className="flex-1 sm:flex-none">

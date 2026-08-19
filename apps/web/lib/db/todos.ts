@@ -55,6 +55,8 @@ export async function deleteTodo(id: string): Promise<void> {
 export async function deleteDoneTodos(): Promise<number> {
   const { supabase } = await authedClient();
 
-  const rows = unwrap(await supabase.from('todos').delete().not('done_at', 'is', null).select('id'));
+  const rows = unwrap(
+    await supabase.from('todos').delete().not('done_at', 'is', null).select('id'),
+  );
   return rows.length;
 }

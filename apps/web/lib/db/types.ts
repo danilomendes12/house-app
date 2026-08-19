@@ -3,6 +3,7 @@ import 'server-only';
 import {
   isAssetIndexer,
   isAssetType,
+  isShoppingList,
   toCents,
   type AssetEventType,
   type AssetIndexer,
@@ -10,6 +11,7 @@ import {
   type Cents,
   type CategoryKind,
   type IsoDate,
+  type ShoppingList,
   type TransactionSource,
   type TransactionType,
 } from '@finance/shared';
@@ -52,6 +54,18 @@ export interface Todo {
   id: string;
   title: string;
   /** When it was checked off, as a timestamp; `null` while pending. */
+  doneAt: string | null;
+}
+
+/**
+ * One line of a shopping list. Same shape as {@link Todo} plus the list it belongs to —
+ * they are siblings, not the same thing: a chore is done, an item is bought.
+ */
+export interface ShoppingItem {
+  id: string;
+  list: ShoppingList;
+  title: string;
+  /** When it was bought, as a timestamp; `null` while pending. */
   doneAt: string | null;
 }
 
@@ -114,6 +128,20 @@ export function toTransaction(row: Tables<'transactions'>): Transaction {
 export function toTodo(row: Tables<'todos'>): Todo {
   return {
     id: row.id,
+    title: row.title,
+    doneAt: row.done_at,
+  };
+}
+
+/**
+ * `list` is CHECK-constrained to the same two values as the union, so the fallback only
+ * fires if the constraint and the union drift apart — in which case showing the row on the
+ * house list beats dropping it.
+ */
+export function toShoppingItem(row: Tables<'shopping_items'>): ShoppingItem {
+  return {
+    id: row.id,
+    list: isShoppingList(row.list) ? row.list : 'home',
     title: row.title,
     doneAt: row.done_at,
   };

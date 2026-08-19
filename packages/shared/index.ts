@@ -8,3 +8,4 @@ export * from './categorize';
 export * from './assets';
 export * from './portfolio';
 export * from './xp-position';
+export * from './shopping';
