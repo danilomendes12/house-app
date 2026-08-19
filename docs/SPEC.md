@@ -587,7 +587,7 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - Dado que procuro no repositório por domínio, TLS, backup ou procedimento de deploy, então não acho nada — o que não existe não está documentado como se existisse.
 
 **Hospedagem (Fase 11):**
-- Dada uma VM recém-criada e vazia, quando rodo `pnpm server init --owner <email>`, então o app responde em `https://tinocot.com`, com o dono provisionado e a senha impressa uma única vez.
+- Dada uma VM recém-criada e vazia, quando rodo `pnpm server init --owner <email>`, então o app responde em `https://momolados.com.br/financial`, com o dono provisionado e a senha impressa uma única vez.
 - Dado um dump gerado pelo backup automático, quando rodo `pnpm db:restore`, então os lançamentos e o patrimônio voltam íntegros, com **um** household — não dois — e com `external_id`/`external_ref` preservados. Validado na stack: 2 usuários, 1 household, 64 transações, 12 ativos, 7 migrations no histórico.
 - Dado que abro pelo iPhone no domínio com HTTPS, então a PWA instala e o service worker registra.
 - Dado `pnpm server` duas vezes seguidas sem commit novo, então a segunda não muda nada — nem sequer tira um dump, porque o dump é condicionado a haver migration pendente.
@@ -616,7 +616,7 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | **8 — Carteira** | Patrimônio vira acompanhamento, não cadastro | Alocação por classe/indexador/instituição, concentração, vencimentos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês (§6.2). Sem migration |
 | **9 — Self-hosted** | O app instala em qualquer lugar | Login por e-mail e senha (fim do magic link, do SMTP e da URL de redirect), configuração do Supabase em runtime (imagem portátil, fim das `NEXT_PUBLIC_*`), `Dockerfile` standalone e `deploy/docker-compose.yml` com Caddy + Postgres + GoTrue + PostgREST (§5.3). Sem migration |
 | **10 — Um fluxo só** | Um jeito de subir, não três | Fim da stack paralela da Supabase CLI (`supabase start`): o compose vira o único ambiente e a CLI vira ferramenta. `pnpm dev` sobe tudo e roda o Next no host com hot reload; Studio e build de produção atrás de profiles. Um arquivo de env, uma configuração de auth. Remoção do que descrevia uma infra inexistente: domínio, TLS, backup e procedimento de VM (§5.3). Sem migration |
-| **11 — Hospedagem** ✅ | O app sai da sua máquina | VM `e2-micro` do Always Free da GCP (`us-east1`, Ubuntu 24.04) com a mesma stack. Reposto o que a Fase 10 tirou, agora contra um alvo real: bloco público do Caddy com TLS em `financas.tinocot.com`, `deploy/docker-compose.server.yml` (o único arquivo que difere entre laptop e servidor), `pnpm server init`/`pnpm server` para deploy inicial e de manutenção, `pnpm db:dump`/`pnpm db:restore` servindo aos três usos, timer de backup diário **com restore testado**, e a rotina de migrations remotas. Procedimento (o que o `gcloud` faz e o que sobra para você) em [`docs/DEPLOY.md`](./DEPLOY.md). Sem migration |
+| **11 — Hospedagem** ✅ | O app sai da sua máquina | VM `e2-micro` do Always Free da GCP (`us-east1`, Ubuntu 24.04) com a mesma stack. Reposto o que a Fase 10 tirou, agora contra um alvo real: bloco público do Caddy com TLS em `momolados.com.br`, `deploy/docker-compose.server.yml` (o único arquivo que difere entre laptop e servidor), `pnpm server init`/`pnpm server` para deploy inicial e de manutenção, `pnpm db:dump`/`pnpm db:restore` servindo aos três usos, timer de backup diário **com restore testado**, e a rotina de migrations remotas. Procedimento (o que o `gcloud` faz e o que sobra para você) em [`docs/DEPLOY.md`](./DEPLOY.md). Sem migration |
 | **12 — Tarefas** ✅ | A aba de orçamento vira a lista da casa | Remoção do orçamento inteiro — tabela `budgets`, telas, `budgetStatus` e a barra de "quanto resta" (§12) — e, no lugar dela na tab bar, a checklist compartilhada do §6.4. Duas migrations: `drop table budgets` e `create table todos` |
 | **13 — Compras** ✅ | A casa para de esquecer o detergente | Sexta aba na tab bar: as duas listas de compras do §6.5 (`Casa` e `Mercado`) em `/shopping/[list]`, irmãs da checklist e escopadas por `list`. A tab bar passa de cinco para seis ícones e ganha `shortLabel` em Patrimônio e Tendências (§12). Uma migration: `create table shopping_items` |
 
@@ -628,7 +628,7 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | ~~Q2~~ | ~~Renda entra no sistema para calcular "sobra do mês"?~~ | — | Resolvida em 2026-08-02: tendências cobrem só despesas (§12) |
 | Q3 | Quando migrar PWA → iOS nativo? Sugestão: só se a fricção da PWA incomodar após 1 mês de uso real | Você | Não bloqueia |
 | Q4 | Vale conectar transações a `accounts` (Nubank Cartão, Dinheiro) na UI, ou `account_id` continua sempre nulo? | Você | Não bloqueia (tabela existe, ninguém escreve nela) |
-| ~~Q5~~ | ~~**Onde hospedar?**~~ | — | Respondida três vezes; vale a última. **2026-08-15:** Oracle Always Free — nunca subiu (`Out of host capacity`). **2026-08-16:** netcup VPS piko, escolhido pelo estudo de [`docs/HOSTING.md`](./HOSTING.md). **2026-08-19 (vale esta):** **VM `e2-micro` do Always Free da Google Cloud**, `us-east1`, Ubuntu 24.04, IP fixo `35.211.95.169`, domínio `financas.tinocot.com` e TLS pelo Caddy — ~R$ 20/mês, que é só o IPv4. A comparação de preço com a AWS está na [Parte 7 do HOSTING](./HOSTING.md#parte-7--gcp--aws-qual-das-duas-é-a-mais-barata); o procedimento, em [`docs/DEPLOY.md`](./DEPLOY.md) |
+| ~~Q5~~ | ~~**Onde hospedar?**~~ | — | Respondida três vezes; vale a última. **2026-08-15:** Oracle Always Free — nunca subiu (`Out of host capacity`). **2026-08-16:** netcup VPS piko, escolhido pelo estudo de [`docs/HOSTING.md`](./HOSTING.md). **2026-08-19 (vale esta):** **VM `e2-micro` do Always Free da Google Cloud**, `us-east1`, Ubuntu 24.04, IP fixo `35.211.95.169`, domínio `momolados.com.br` (registro.br) e TLS pelo Caddy — ~R$ 20/mês, que é só o IPv4. A comparação de preço com a AWS está na [Parte 7 do HOSTING](./HOSTING.md#parte-7--gcp--aws-qual-das-duas-é-a-mais-barata); o procedimento, em [`docs/DEPLOY.md`](./DEPLOY.md) |
 
 ## 12. Decisões assumidas (mude se discordar)
 
@@ -912,15 +912,22 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
   gasto — o antídoto é um alerta de orçamento e o fato de o custo de saída ser baixo
   (`pnpm db:dump`, `db:restore --remote` e um compose que é igual em qualquer lugar).
 
-- **Domínio próprio com Caddy emitindo Let's Encrypt, não túnel** (Fase 11): `tinocot.com`,
-  com A/AAAA apontando direto para o IP da VM e o Caddy resolvendo o certificado em 80/443.
-  A alternativa era `cloudflared`, que dispensaria abrir porta — mas acrescenta um daemon na
-  VM e uma conta de terceiro no caminho de todo request, para resolver um problema
-  (não abrir portas) que a Security List já resolve. Vale a nota que custa uma tarde: o DNS
-  está na Cloudflare, e o registro tem que ficar em **"DNS only"** — com o proxy ligado, ela
-  intercepta o desafio HTTP-01 e o Caddy nunca emite nada.
-  O TLS não é enfeite: sem *secure context* o `public/sw.js` não registra e o iPhone não
-  instala a PWA, que é o caso de uso nº 1 (§8).
+- **Domínio próprio com Caddy emitindo Let's Encrypt, não túnel** (Fase 11): hoje
+  `momolados.com.br`, comprado no registro.br, com o A apontando direto para o IP fixo da VM.
+  O Caddy pede e renova o certificado sozinho no 80/443, que é o que dá secure context — sem
+  ele não há service worker e o iPhone não instala a PWA (§8). Um túnel (Cloudflare Tunnel,
+  ngrok) resolveria o mesmo problema criando uma dependência de terceiro no caminho de todo
+  request, e a Fase 11 existe justamente para o app não depender de serviço de ninguém.
+- **O app mora num subcaminho: `momolados.com.br/financial`** (decidido em 2026-08-19): o
+  domínio é da casa e pode hospedar outras coisas na raiz, então o app ocupa um prefixo em vez
+  do domínio inteiro. O custo é real e está registrado em [`docs/DEPLOY.md` §1.3](./DEPLOY.md):
+  `basePath` do Next é **build-time** — o prefixo fica assado na imagem, o que é a única
+  exceção à convenção de configuração em runtime deste projeto —, e PWA, service worker e
+  manifest carregam o prefixo à mão porque o Next não prefixa referência absoluta escrita por
+  nós. A alternativa sem código era um subdomínio; foi considerada e recusada pelo mesmo motivo
+  que o subcaminho existe. Aplicado em 2026-08-19; o mapa de onde o prefixo está escrito à mão
+  é o §1.3.
+
 - **A imagem é construída na VM** (Fase 11): `git pull` + `docker compose build` lá, com os
   12 GB dando conta do build do Next com folga. `docker save | ssh docker load` do Mac
   pouparia CPU da VM, mas criaria uma segunda origem para a imagem — o que roda em produção

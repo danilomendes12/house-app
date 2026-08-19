@@ -169,7 +169,7 @@ async function banner(env, lastLine) {
     [
       '',
       '\x1b[32m✓ stack up\x1b[0m',
-      `  app     ${server && domain ? `https://${domain}` : `http://localhost:${webPort}`}`,
+      `  app     ${server && domain ? `https://${domain}/financial` : `http://localhost:${webPort}/financial`}`,
       `  login   ${await ownerEmail(env)} + senha (pnpm db:password <email> gera outra)`,
       ...(server ? [] : ['  studio  pnpm stack studio']),
       '',
@@ -182,7 +182,7 @@ async function banner(env, lastLine) {
 /** Whether something is already serving the app on the web port. */
 async function appAlreadyServing() {
   try {
-    await fetch(`http://localhost:${webPort}/login`, {
+    await fetch(`http://localhost:${webPort}/financial/login`, {
       redirect: 'manual',
       signal: AbortSignal.timeout(2000),
     });

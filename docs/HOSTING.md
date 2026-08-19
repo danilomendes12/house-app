@@ -709,7 +709,7 @@ provedor e já lidava com usuário não-root (`SUDO=` por `id -u`), então só m
 | [`docs/SPEC.md`](./SPEC.md) | §11 Q5 reaberta e §12 ganha a decisão nova, com ponteiro para esta parte | idem |
 
 ⚠️ Em ambos, o **IP tem que ser estático e reservado** antes do DNS: IP efêmero muda a cada parada da VM, e
-o `A` da Cloudflare aponta para o antigo. Na AWS, IP estático **não anexado** continua sendo cobrado
+o `A` da zona (hoje no registro.br) aponta para o antigo. Na AWS, IP estático **não anexado** continua sendo cobrado
 (`PublicIPv4:IdleAddress`, US$ 0,005/h) — desanexar não economiza nada, só quebra o DNS.
 
 ### 7.10 Como reproduzir os preços desta parte

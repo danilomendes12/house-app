@@ -31,9 +31,21 @@
 }
 
 {$DOMAIN:localhost} {
-	# Everything, to the app. Nothing here routes to `auth` or `rest`: the browser never
-	# talks to Supabase in this project — every read and write is a Server Component, Server
-	# Action or Route Handler (SPEC §5.4) — so publishing the API would open a door that no
-	# client uses.
-	reverse_proxy web:3000
+	# The app lives under /financial (SPEC §12), and `handle` is deliberate: the block above
+	# uses `handle_path` because GoTrue and PostgREST serve at the root and the prefix has to
+	# go away — here it is the opposite. Next is built with basePath: '/financial', so it
+	# emits and expects that prefix; stripping it would 404 every asset.
+	#
+	# Nothing here routes to `auth` or `rest`: the browser never talks to Supabase in this
+	# project — every read and write is a Server Component, Server Action or Route Handler
+	# (SPEC §5.4) — so publishing the API would open a door that no client uses.
+	handle /financial* {
+		reverse_proxy web:3000
+	}
+
+	# The root is not the app's. A redirect is friendlier than a 404 for the person who types
+	# the bare domain, and it keeps this a single door.
+	handle {
+		redir https://{host}/financial{uri} 308
+	}
 }

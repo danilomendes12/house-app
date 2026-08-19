@@ -60,7 +60,7 @@ export function readDeployConfig({ require: required = ['DEPLOY_HOST'] } = {}) {
         '',
         '  DEPLOY_HOST=<ip público da VM>',
         '  DEPLOY_USER=financas',
-        '  DOMAIN=financas.tinocot.com',
+        '  DOMAIN=momolados.com.br',
         '',
         'O passo a passo de como chegar até aqui está em docs/DEPLOY.md.',
       ].join('\n'),

@@ -15,7 +15,10 @@ export function ServiceWorkerRegistrar() {
     if (!('serviceWorker' in navigator)) return;
 
     const register = () => {
-      navigator.serviceWorker.register('/sw.js').catch((error: unknown) => {
+      // Written out, not derived: basePath does not touch strings like this one, and the
+      // worker's scope is its own directory — at /financial/sw.js it controls /financial/*,
+      // which is exactly the app (docs/DEPLOY.md §1.3).
+      navigator.serviceWorker.register('/financial/sw.js').catch((error: unknown) => {
         console.error('[pwa] service worker registration failed', error);
       });
     };

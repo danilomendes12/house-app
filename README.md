@@ -160,7 +160,8 @@ Os scripts são idempotentes: rodar de novo **não** troca a senha de quem já e
 
 Uma **VM `e2-micro` do Always Free do Google Compute Engine** (2 vCPU compartilhados, 1 GB,
 30 GB, `us-east1`, Ubuntu 24.04), rodando a mesma stack `docker compose`, com TLS do Let's
-Encrypt em **https://financas.tinocot.com**. A imagem do app vem do GHCR, construída pelo CI —
+Encrypt em **https://momolados.com.br/financial** (domínio do registro.br; o app mora no
+subcaminho `/financial` — [`docs/DEPLOY.md` §1.3](./docs/DEPLOY.md)). A imagem do app vem do GHCR, construída pelo CI —
 a VM é host de containers, não máquina de build.
 
 Custo: **~R$ 20/mês**, e é só o IPv4 público — a VM e o disco estão no free tier que não
@@ -216,5 +217,5 @@ vai no dump); as sessões de outra instalação, não.
 - [x] Fase 8 — Carteira (alocação, rentabilidade por período, aporte vs. valorização)
 - [x] Fase 9 — Self-hosted (login por senha, imagem portátil, `docker compose`)
 - [x] Fase 10 — Um fluxo só (stack única em Docker, fim da stack paralela da CLI)
-- [x] Fase 11 — Hospedagem (VM `e2-micro` do Always Free da GCP, TLS em financas.tinocot.com, backup com restore testado)
+- [x] Fase 11 — Hospedagem (VM `e2-micro` do Always Free da GCP, TLS em momolados.com.br, backup com restore testado)
 - [x] Fase 12 — Tarefas (fim do orçamento; a aba virou a checklist compartilhada da casa)

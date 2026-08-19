@@ -16,9 +16,16 @@
 const CACHE_VERSION = 'v1';
 const ASSET_CACHE = `finance-assets-${CACHE_VERSION}`;
 const SHELL_CACHE = `finance-shell-${CACHE_VERSION}`;
-const OFFLINE_URL = '/offline.html';
+// This file is served as-is: no bundler touches it, so the basePath of next.config.ts has to
+// be written out here (docs/DEPLOY.md §1.3).
+const BASE_PATH = '/financial';
+const OFFLINE_URL = `${BASE_PATH}/offline.html`;
 
-const PRECACHED = [OFFLINE_URL, '/icons/icon-192.png', '/icons/icon-512.png'];
+const PRECACHED = [
+  OFFLINE_URL,
+  `${BASE_PATH}/icons/icon-192.png`,
+  `${BASE_PATH}/icons/icon-512.png`,
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -46,7 +53,10 @@ self.addEventListener('activate', (event) => {
 
 /** Content-hashed by the build, so a cache hit can never be stale. */
 function isImmutableAsset(url) {
-  return url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/');
+  return (
+    url.pathname.startsWith(`${BASE_PATH}/_next/static/`) ||
+    url.pathname.startsWith(`${BASE_PATH}/icons/`)
+  );
 }
 
 self.addEventListener('fetch', (event) => {

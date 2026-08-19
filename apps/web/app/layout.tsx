@@ -5,14 +5,17 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Finanças',
   description: 'Controle de gastos mensais e acompanhamento de patrimônio.',
-  manifest: '/manifest.webmanifest',
+  // Prefixed by hand, and it has to be: basePath ('/financial', next.config.ts) rewrites what
+  // Next emits — /_next/*, next/link, redirect() — and leaves strings like these alone. Checked
+  // in the rendered HTML, not assumed. The full list of hand-written URLs is docs/DEPLOY.md §1.3.
+  manifest: '/financial/manifest.webmanifest',
   applicationName: 'Finanças',
   icons: {
     icon: [
-      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icon.svg', type: 'image/svg+xml' },
+      { url: '/financial/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/financial/icon.svg', type: 'image/svg+xml' },
     ],
-    apple: { url: '/icons/apple-touch-icon.png', sizes: '180x180' },
+    apple: { url: '/financial/icons/apple-touch-icon.png', sizes: '180x180' },
   },
   // iOS ignores the manifest: "Adicionar à Tela de Início" reads these instead.
   appleWebApp: {

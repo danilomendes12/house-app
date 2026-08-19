@@ -10,7 +10,9 @@ aqui é o procedimento.
 `deploy/` que roda na sua máquina. A imagem do app **não é construída lá**: o GitHub Actions
 constrói a cada push em `main` e publica no GHCR, e a VM só faz `pull` — é isso que faz 1 GB
 de RAM bastar, já que o build precisa de ~1150 MiB e o runtime de 305 MiB. Caddy termina o
-TLS em `financas.tinocot.com` com certificado do Let's Encrypt.
+TLS em `momolados.com.br` (comprado no registro.br) com certificado do Let's Encrypt, e o app
+responde sob o prefixo **`/financial`** — `https://momolados.com.br/financial`. Como isso se
+configura, e por que não é só uma linha de proxy, está no [§1.3](#13-a-url-base-momoladoscombrfinancial).
 
 **Custo: ~R$ 20/mês**, e ele é inteiramente o **IPv4 público** (US$ 0,005/h). A VM e os 30 GB
 de disco estão no *Always Free* da Google, que não expira; o egress fica na franquia de
@@ -33,18 +35,31 @@ túnel contra as portas de loopback de lá.
 ## Parte 1 — o que só você pode fazer
 
 A infraestrutura da GCP **já está criada** (§1.1, com os comandos, para quando precisar
-refazer). O que sobra para você são **três** itens — e só o primeiro bloqueia o deploy.
+refazer). O que sobra para você são **três** itens — e, hoje, só o primeiro tem trabalho: o
+DNS é o que bloqueia o certificado, e nada sobe sem ele.
 
-1. **Apontar o DNS.** Na Cloudflare, registro `A` de **`financas.tinocot.com`** →
-   **`35.211.95.169`**, em **DNS only** (nuvem **cinza**). Com o proxy ligado, a Cloudflare
-   intercepta o desafio do Let's Encrypt na porta 80 e o Caddy nunca emite o certificado.
-   Confira: `dig +short financas.tinocot.com` tem que devolver esse IP, e nenhum outro.
+1. **Apontar o DNS.** O domínio é `momolados.com.br`, registrado no **registro.br**, e há
+   dois caminhos — escolha um:
+
+   **(a) DNS no próprio registro.br** (mais simples, é o recomendado aqui): painel do
+   registro.br → o domínio → **DNS** → *Editar zona* → registro **`A`** com nome **vazio**
+   (ou `@`) → **`35.211.95.169`**. Salve e espere a zona publicar (minutos).
+
+   **(b) Delegar para a Cloudflare:** crie a zona lá, troque os servidores DNS no registro.br
+   pelos dois que a Cloudflare der, e crie o `A` → `35.211.95.169` em **DNS only** (nuvem
+   **cinza**). ⚠️ Com o proxy (nuvem laranja) ligado, a Cloudflare intercepta o desafio do
+   Let's Encrypt na porta 80 e o Caddy **nunca** emite o certificado. A delegação de
+   nameservers do registro.br leva algumas horas.
+
+   Nos dois casos, o teste é o mesmo: `dig +short momolados.com.br` tem que devolver
+   `35.211.95.169`, e nenhum outro endereço.
 2. **Publicar o commit.** `git push origin main` — o CI constrói a imagem e publica no GHCR.
    Sem imagem não há deploy, e é de propósito: nenhum commit vermelho vira produção.
-3. **Tornar o package do GHCR público**, uma vez, depois do primeiro build do CI:
-   GitHub → **Packages** → `web` → *Package settings* → *Change visibility* → **Public**.
-   É o passo que dispensa credencial de registry na VM; enquanto for privado, o `pull` lá
-   falha com 401.
+3. **Conferir que o package do GHCR é público** — normalmente não há nada a fazer: como este
+   repositório é público, o package `web` herdou a visibilidade dele no primeiro build
+   (verificado em 2026-08-19). É isso que dispensa credencial de registry na VM. Se algum dia
+   o `pull` lá responder **401**, é aqui: GitHub → **Packages** → `web` → *Package settings* →
+   *Change visibility* → **Public**.
 
 ### 1.1 O que já foi provisionado, e como refazer
 
@@ -87,7 +102,7 @@ ligado, o usuário vira derivado do e-mail e o `ssh financas@…` não entra.
 Já preenchido; está aqui para você reconhecer se precisar mexer:
 
 ```bash
-DOMAIN=financas.tinocot.com
+DOMAIN=momolados.com.br
 DEPLOY_HOST=35.211.95.169
 DEPLOY_USER=financas
 # DEPLOY_SSH_KEY=~/.ssh/sua_chave   # só se não for a chave padrão
@@ -95,6 +110,98 @@ DEPLOY_USER=financas
 
 Confirme o SSH antes de qualquer comando — `ssh financas@35.211.95.169` tem que entrar. Saia
 (`exit`); daqui em diante é script.
+
+### 1.3 A URL base: `momolados.com.br/financial`
+
+> **Aplicado em 2026-08-19.** A tabela abaixo é o que mudou, e continua valendo como mapa: é
+> a lista de todo lugar onde o prefixo está escrito à mão. A raiz do domínio redireciona
+> (308) para `/financial`.
+
+**O que "URL base" quer dizer aqui.** Servir o app num subcaminho não é rotear `/financial/*`
+para o container e pronto: o Next gera URLs absolutas para tudo que ele mesmo serve
+(`/_next/static/…`, os `href` dos links, os endpoints das Server Actions). Se o proxy remove o
+prefixo e o app não sabe dele, a primeira página carrega e todo o resto responde 404, porque o
+navegador pede `/_next/...` e o Caddy não conhece essa rota. Por isso a configuração tem duas
+metades que **têm que concordar**: o Next constrói sabendo do prefixo, e o Caddy encaminha
+**sem** removê-lo.
+
+**A pegadinha que decide o resto:** `basePath` é **build-time** — a
+[documentação do Next](https://nextjs.org/docs/app/api-reference/config/next-config-js/basePath)
+diz que o valor é *"inlined in the client-side bundles"* e não muda sem rebuild. Ou seja: o
+prefixo fica **assado na imagem**, ao contrário de todo o resto da configuração deste projeto,
+que é lida em runtime (CLAUDE.md, convenção 5). Consequência prática: mudar `/financial` de
+lugar é um commit + um build do CI + um deploy, não uma variável no `.env`.
+
+#### O que muda, arquivo por arquivo
+
+| # | Arquivo | Mudança |
+| - | --- | --- |
+| 1 | [`apps/web/next.config.ts`](../apps/web/next.config.ts) | `basePath: '/financial'`. É esta linha que faz o Next emitir `/financial/_next/...` e prefixar todo `next/link` e todo `redirect()` sozinho. |
+| 2 | [`deploy/Caddyfile`](../deploy/Caddyfile) | No bloco `{$DOMAIN:localhost}`, trocar o `reverse_proxy web:3000` solto por um `handle /financial*` (ver abaixo). **`handle`, não `handle_path`** — o bloco `:8000` usa `handle_path` porque GoTrue e PostgREST servem na raiz e o prefixo precisa sumir; aqui é o oposto: o Next *espera* receber `/financial/...`. |
+| 3 | [`apps/web/public/manifest.webmanifest`](../apps/web/public/manifest.webmanifest) | `start_url`, `scope`, `id`, cada `icons[].src` e o `shortcuts[].url` viram `/financial/...`. Sem isso a PWA instala apontando para a raiz e abre numa tela em branco. |
+| 4 | [`apps/web/app/layout.tsx`](../apps/web/app/layout.tsx) | `manifest: '/financial/manifest.webmanifest'` e o `apple` icon idem. O basePath **não** prefixa referências absolutas escritas à mão — a doc do Next diz isso explicitamente para imagens do `public/`. |
+| 5 | [`apps/web/components/service-worker.tsx`](../apps/web/components/service-worker.tsx) | `register('/financial/sw.js')`. O escopo de um service worker é o diretório dele, então em `/financial/sw.js` ele controla exatamente `/financial/*` — que é o que se quer. |
+| 6 | [`apps/web/public/sw.js`](../apps/web/public/sw.js) | `OFFLINE_URL`, o `PRECACHED` e os prefixos que ele casa (`/_next/static`, `/icons/`) ganham `/financial`. |
+| 7 | [`deploy/docker-compose.server.yml`](../deploy/docker-compose.server.yml) | `GOTRUE_SITE_URL: https://${DOMAIN}/financial`. Nada constrói link por e-mail hoje (não há SMTP nem recuperação de senha — SPEC §12), mas deixar a raiz ali é uma mentira esperando a primeira feature que ler isso. |
+| 8 | [`scripts/server.mjs`](../scripts/server.mjs) | A checagem final (`assertPubliclyServed`) pede `https://<domínio>/login`; passa a pedir `https://<domínio>/financial/login`. Sem isso o deploy "falha" num app que está no ar. |
+| 9 | [`apps/web/proxy.ts`](../apps/web/proxy.ts) / [`lib/supabase/proxy.ts`](../apps/web/lib/supabase/proxy.ts) | **Conferir, não mudar às cegas.** O gate de sessão compara `request.nextUrl.pathname` com `/login` e redireciona clonando a URL. O Next tira o basePath do `pathname` e o repõe ao serializar, então isso *deve* continuar valendo — mas é o único ponto que depende de comportamento implícito, e é o primeiro a testar depois da mudança: entrar deslogado em `/financial/transactions` tem que cair em `/financial/login`, não em `/login`. |
+
+O bloco do Caddy fica assim:
+
+```caddyfile
+{$DOMAIN:localhost} {
+	# handle, não handle_path: o prefixo faz parte do que o Next espera receber.
+	handle /financial* {
+		reverse_proxy web:3000
+	}
+
+	# A raiz não é do app. Mandar para ele é mais gentil que um 404 — e continua sendo
+	# uma porta só: nada aqui roteia para `auth` ou `rest`.
+	handle {
+		redir https://{host}/financial{uri} 308
+	}
+}
+```
+
+#### O que foi verificado, e como repetir
+
+Duas coisas desta lista não são opinião — foram medidas contra o servidor de dev com o
+`basePath` já ligado, e é assim que se confere de novo:
+
+```bash
+curl -s http://127.0.0.1:3000/financial/login | grep -oE '(href|src)="[^"]*"' | sort -u
+```
+
+- **O que o Next prefixa sozinho:** todo `/_next/static/...`, os `href` de `next/link` e os
+  `redirect()`. Confirmado: `GET /financial/transactions` deslogado responde **307 para
+  `/financial/login`**, não para `/login` — que era a única dúvida real da tabela (item 9).
+- **O que ele não prefixa:** as URLs escritas à mão em `metadata`. Antes da correção o HTML
+  saía com `href="/manifest.webmanifest"` e `href="/icons/icon-192.png"` — ou seja, 404 —
+  enquanto os arquivos passaram a ser servidos em `/financial/...`. Item 4 da tabela.
+- **Um vizinho que apareceu no teste:** `sw.js` e `offline.html` não estavam na lista de
+  exclusões do gate de sessão em [`apps/web/proxy.ts`](../apps/web/proxy.ts) e respondiam
+  **307 para o login** quando pedidos sem sessão — que é exatamente como o navegador os pede.
+  Isso já era verdade antes do subcaminho; foi corrigido junto, porque é o que faz o service
+  worker instalar e a tela de offline existir.
+
+#### Como testar antes de subir
+
+O `pnpm dev` roda o Next no host, então o prefixo aparece lá também — a URL local vira
+`http://127.0.0.1:3000/financial`. É de propósito: o mesmo prefixo nos dois lugares é o que
+faz "funciona local" continuar significando alguma coisa. Para ver o conjunto real
+(Caddy + imagem + prefixo), `pnpm stack prod`.
+
+Roteiro mínimo depois de aplicar: abrir `/financial` deslogado (tem que ir para
+`/financial/login`), entrar, navegar entre as seis abas, recarregar com F5 numa aba interna
+(pega link errado de asset), e no iPhone reinstalar a PWA — a instalada hoje aponta para a
+raiz e **não** se corrige sozinha.
+
+#### A alternativa mais barata, se você quiser considerar
+
+Um **subdomínio** (`financas.momolados.com.br`) custa **zero linha de código**: é um `A` a mais
+no registro.br e o `DOMAIN` do `.env`. Todo o trabalho acima existe só porque a escolha foi
+subcaminho. Vale a pena se `momolados.com.br` for hospedar outras coisas na raiz; se for só o
+app, o subdomínio entrega o mesmo resultado sem assar caminho nenhum na imagem.
 
 ---
 
@@ -121,7 +228,7 @@ O `init` faz, em ordem, e para no primeiro erro:
 6. instala o timer de backup diário;
 7. puxa a imagem do GHCR e sobe a stack na ordem obrigatória — `db` → `auth` saudável →
    migrations (por túnel SSH, daqui) → `rest`, `caddy` e `web` — e provisiona o dono;
-8. confere que todo container está saudável e que `https://financas.tinocot.com/login` responde.
+8. confere que todo container está saudável e que `https://momolados.com.br/financial/login` responde.
 
 **A senha do dono é impressa uma única vez, no passo 7.** Anote na hora. Se perder,
 `pnpm db:password --remote voce@exemplo.com` gera outra.
@@ -150,12 +257,12 @@ household duplicado. Detalhes em [Backup e restore](#backup-e-restore).
 
 ### Qual URL eu abro
 
-**https://financas.tinocot.com** — a mesma no desktop e no iPhone. Não existe outra: `127.0.0.1:3000`
+**https://momolados.com.br/financial** — a mesma no desktop e no iPhone. Não existe outra: `127.0.0.1:3000`
 é a sua máquina, e a API do Supabase não tem endereço público em lugar nenhum.
 
 ### Instalar a PWA no iPhone
 
-1. Abra `https://financas.tinocot.com` no **Safari** (não no Chrome — só o Safari instala PWA no iOS).
+1. Abra `https://momolados.com.br/financial` no **Safari** (não no Chrome — só o Safari instala PWA no iOS).
 2. Faça login.
 3. Botão de compartilhar (o quadrado com a seta) → **Adicionar à Tela de Início**.
 4. Confirme o nome ("Finanças") → **Adicionar**.

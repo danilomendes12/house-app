@@ -11,7 +11,13 @@ export const config = {
     /*
      * Every path except static assets and image files — the session cookie must be
      * refreshed on any request that can render a page.
+     *
+     * `sw.js` and `offline.html` are excluded for a different reason than the rest: they are
+     * the two files the browser fetches *without* a session — the service worker registers on
+     * the login page, and the offline page is precached to be shown when there is no network.
+     * Gated, both answered 307 to /login, which is a service worker that never installs and an
+     * offline screen that is a redirect.
      */
-    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|offline.html|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
   ],
 };

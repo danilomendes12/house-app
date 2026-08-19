@@ -258,7 +258,7 @@ function assertHealthy(config) {
 
 /** The last check, and the only one from the outside: HTTPS, through the real name. */
 async function assertPubliclyServed(config) {
-  const url = `https://${config.domain}/login`;
+  const url = `https://${config.domain}/financial/login`;
   try {
     const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
     if (response.status >= 500) fail(`${url} respondeu ${response.status}.`);
@@ -391,7 +391,7 @@ async function init() {
     [
       '',
       '\x1b[32m✓ produção no ar\x1b[0m',
-      `  app     https://${config.domain}`,
+      `  app     https://${config.domain}/financial`,
       `  imagem  ${image}:${tag}`,
       `  login   ${owner} + a senha impressa acima (ela não será mostrada de novo)`,
       '',
@@ -437,7 +437,7 @@ async function update() {
   step('Limpando imagens antigas…');
   pruneImages(config);
 
-  console.log(`\n\x1b[32m✓ atualizado\x1b[0m  https://${config.domain}  (${tag})\n`);
+  console.log(`\n\x1b[32m✓ atualizado\x1b[0m  https://${config.domain}/financial  (${tag})\n`);
 }
 
 function status() {

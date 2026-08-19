@@ -35,7 +35,7 @@ services:
       # GoTrue's notion of where the app lives. Nothing builds links today (there is no
       # SMTP and no recovery flow — SPEC §12), but leaving localhost:3000 on a server is a
       # lie waiting for the first feature that reads it.
-      GOTRUE_SITE_URL: https://${DOMAIN:?}
+      GOTRUE_SITE_URL: https://${DOMAIN:?}/financial
 
   web:
     # The image the CI built, pulled from GHCR — never built here. The VM has 1 GB of RAM
