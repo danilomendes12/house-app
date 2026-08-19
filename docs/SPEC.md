@@ -17,7 +17,7 @@ Hoje não existe um lugar único e confiável para responder duas perguntas reco
 2. **Entrada de despesa manual em < 15 segundos** pelo celular (PWA), incluindo categoria.
 3. **Lançamento em lote sem retrabalho:** importar o CSV da fatura do Nubank quantas vezes for preciso, sem gerar duplicatas, com categorização automática por regras.
 4. **Acompanhamento de patrimônio:** valor consolidado, rendimento por ativo e evolução histórica mensal.
-5. **Custo de operação baixo e previsível.** Era R$ 0/mês nos free tiers de Supabase e Vercel; desde a Fase 9 é o custo de rodar a stack você mesmo, e desde a Fase 11 esse custo tem endereço: **R$ 0/mês** numa VM Always Free da Oracle (§5.1). O que se comprou com isso foi não depender de um projeto que pausa após 7 dias sem requisição.
+5. **Custo de operação baixo e previsível.** Era R$ 0/mês nos free tiers de Supabase e Vercel; desde a Fase 9 é o custo de rodar a stack você mesmo, e desde a Fase 11 esse custo tem endereço: **~R$ 20/mês** numa VM `e2-micro` do *Always Free* da Google Cloud, onde o que se paga é só o IPv4 público (§5.1, §11 Q5). O que se comprou com isso foi não depender de um projeto que pausa após 7 dias sem requisição.
 
 ## 3. Não-objetivos (v1)
 
@@ -78,7 +78,7 @@ duas partes — a *forma* (decidida na Fase 9) e o *lugar* (decidido na Fase 11)
 |---|---|---|---|
 | **Supabase self-hosted em `docker compose` (escolhida)** | Dados seus, sem pausa por inatividade, custo previsível, e o mesmo stack roda na sua máquina e onde quer que ele vá parar | Operação é sua: backup, atualização, certificado | ✅ a forma |
 | Vercel + Supabase hospedado | Zero operação, free tier | O projeto Supabase **pausa após 7 dias** sem requisição; a config vai *assada* no build | ❌ desde a Fase 9 |
-| **VM Always Free da Oracle Cloud (escolhida)** | 2 OCPU ARM / 12 GB por R$ 0, indefinidamente; disco de verdade; a mesma stack sem adaptação | Operação é sua; A1 sofre com "Out of host capacity" na criação; conta em trial pode ser recuperada por ociosidade | ✅ o lugar, Fase 11 |
+| **VM `e2-micro` do Always Free da GCP (escolhida)** | VM + 30 GB de disco de graça e sem prazo, em `us-east1`; a mesma stack sem adaptação; só o IPv4 é cobrado (~R$ 20/mês) | Operação é sua; 1 GB de RAM obriga o build a viver no CI; disco grátis é HDD; nuvem não tem teto de gasto, só alerta | ✅ o lugar, Fase 11 (Oracle e netcup foram as tentativas anteriores — [`docs/HOSTING.md`](./HOSTING.md)) |
 | PaaS com Docker (Fly, Railway, Render) | Menos operação | O banco vira um add-on pago ou some no free tier; a stack de quatro containers deixa de ser a mesma | ❌ Fase 11 |
 | Máquina em casa | Custo zero e disco à mão | Depende do link e da energia da casa; NAT, IP dinâmico e a PWA da esposa quebrando quando falta luz | ❌ Fase 11 |
 
@@ -367,6 +367,36 @@ todos (
 - Ordem de leitura: pendentes primeiro, mais recentes no topo dentro de cada grupo. Não há
   ordenação manual — não existe `sort_order` enquanto não existir UI para arrastar.
 
+### 6.5 Listas de compras (Fase 13)
+
+```sql
+-- As duas listas de compras da casa
+shopping_items (
+  list    text not null,                    -- 'home' | 'market' (CHECK)
+  title   text not null,
+  done_at timestamptz                       -- null = faltando; é todo o estado
+)
+```
+
+**Regras:**
+
+- **Irmã da checklist, não a mesma coisa:** mesma forma (`title` + `done_at`) e mesma recusa a
+  virar objeto financeiro — sem valor, sem categoria. O que muda é *quando* se olha: a tarefa
+  é lida em casa, o item de mercado é lido no corredor do supermercado, e uma tarefa no meio
+  da lista do mercado é ruído nos dois lugares.
+- **Duas listas, uma tabela:** `list` é um discriminador com CHECK. Colunas, índice, política de
+  RLS e todas as queries seriam idênticas em duas tabelas, e uma terceira lista custaria uma
+  migration mais um módulo em vez de um valor no CHECK.
+  - `home` — casa em geral (lâmpada, pilha, cabo HDMI)
+  - `market` — supermercado (arroz, detergente, café)
+- **Sem quantidade:** o item é só o título. "Leite x2" é escrito no próprio título; um stepper
+  por linha custaria um controle a mais em toda linha para um dado que ninguém confere depois.
+- **Toda operação é escopada por `list`:** ler, contar e principalmente *limpar os comprados* —
+  esvaziar o carrinho depois do mercado não pode apagar o que a casa ainda deve.
+- Ordem de leitura igual à do §6.4: faltando primeiro, mais recentes no topo dentro de cada
+  grupo. Não há ordenação manual (nem por corredor do mercado) enquanto não existir UI para
+  arrastar.
+
 ## 7. Import de CSV da fatura
 
 Entrada em lote sem integração: o app do Nubank exporta a fatura como CSV, e o arquivo é
@@ -491,8 +521,9 @@ gêmeos. O mesmo produto listado duas vezes no arquivo é **somado**, não dupli
 - [x] Carteira: alocação por classe/indexador/instituição, concentração, vencimentos próximos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês — Fase 8
 - [x] Self-hosted: login por e-mail e senha, configuração em runtime (imagem portátil) e a stack em `docker compose` — Fase 9, critérios do §9 validados na stack
 - [x] Um fluxo só: uma stack, um arquivo de env, uma configuração de auth; `pnpm dev` sobe tudo — Fase 10, critérios do §9 validados na stack
-- [x] Hospedagem: TLS com domínio e backup automático com restore testado — Fase 11, numa VM Always Free da Oracle (§11 Q5), com o restore executado de verdade a partir de um dump do backup automático
+- [x] Hospedagem: TLS com domínio e backup automático com restore testado — Fase 11, hoje numa VM `e2-micro` do Always Free da GCP (§11 Q5), com o restore executado de verdade a partir de um dump do backup automático
 - [x] Lista de tarefas compartilhada da casa (§6.4) — Fase 12
+- [x] Listas de compras da casa e do mercado (§6.5) — Fase 13, validadas na stack local (RLS, CHECK e limpeza escopada por lista)
 
 ### P2 — futuro (guiar arquitetura, não construir agora)
 - [ ] App iOS nativo (SwiftUI) consumindo Supabase + endpoints existentes; widget de entrada rápida
@@ -585,8 +616,9 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | **8 — Carteira** | Patrimônio vira acompanhamento, não cadastro | Alocação por classe/indexador/instituição, concentração, vencimentos, posições desatualizadas, rentabilidade por período (Modified Dietz) e aporte vs. valorização mês a mês (§6.2). Sem migration |
 | **9 — Self-hosted** | O app instala em qualquer lugar | Login por e-mail e senha (fim do magic link, do SMTP e da URL de redirect), configuração do Supabase em runtime (imagem portátil, fim das `NEXT_PUBLIC_*`), `Dockerfile` standalone e `deploy/docker-compose.yml` com Caddy + Postgres + GoTrue + PostgREST (§5.3). Sem migration |
 | **10 — Um fluxo só** | Um jeito de subir, não três | Fim da stack paralela da Supabase CLI (`supabase start`): o compose vira o único ambiente e a CLI vira ferramenta. `pnpm dev` sobe tudo e roda o Next no host com hot reload; Studio e build de produção atrás de profiles. Um arquivo de env, uma configuração de auth. Remoção do que descrevia uma infra inexistente: domínio, TLS, backup e procedimento de VM (§5.3). Sem migration |
-| **11 — Hospedagem** ✅ | O app sai da sua máquina | VM Always Free da Oracle (Ampere A1, Ubuntu 24.04) com a mesma stack. Reposto o que a Fase 10 tirou, agora contra um alvo real: bloco público do Caddy com TLS em `tinocot.com`, `deploy/docker-compose.server.yml` (o único arquivo que difere entre laptop e servidor), `pnpm server init`/`pnpm server` para deploy inicial e de manutenção, `pnpm db:dump`/`pnpm db:restore` servindo aos três usos, timer de backup diário **com restore testado**, e a rotina de migrations remotas. Tutorial do console da Oracle em [`docs/DEPLOY.md`](./DEPLOY.md). Sem migration |
+| **11 — Hospedagem** ✅ | O app sai da sua máquina | VM `e2-micro` do Always Free da GCP (`us-east1`, Ubuntu 24.04) com a mesma stack. Reposto o que a Fase 10 tirou, agora contra um alvo real: bloco público do Caddy com TLS em `financas.tinocot.com`, `deploy/docker-compose.server.yml` (o único arquivo que difere entre laptop e servidor), `pnpm server init`/`pnpm server` para deploy inicial e de manutenção, `pnpm db:dump`/`pnpm db:restore` servindo aos três usos, timer de backup diário **com restore testado**, e a rotina de migrations remotas. Procedimento (o que o `gcloud` faz e o que sobra para você) em [`docs/DEPLOY.md`](./DEPLOY.md). Sem migration |
 | **12 — Tarefas** ✅ | A aba de orçamento vira a lista da casa | Remoção do orçamento inteiro — tabela `budgets`, telas, `budgetStatus` e a barra de "quanto resta" (§12) — e, no lugar dela na tab bar, a checklist compartilhada do §6.4. Duas migrations: `drop table budgets` e `create table todos` |
+| **13 — Compras** ✅ | A casa para de esquecer o detergente | Sexta aba na tab bar: as duas listas de compras do §6.5 (`Casa` e `Mercado`) em `/shopping/[list]`, irmãs da checklist e escopadas por `list`. A tab bar passa de cinco para seis ícones e ganha `shortLabel` em Patrimônio e Tendências (§12). Uma migration: `create table shopping_items` |
 
 ## 11. Questões em aberto
 
@@ -596,7 +628,7 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 | ~~Q2~~ | ~~Renda entra no sistema para calcular "sobra do mês"?~~ | — | Resolvida em 2026-08-02: tendências cobrem só despesas (§12) |
 | Q3 | Quando migrar PWA → iOS nativo? Sugestão: só se a fricção da PWA incomodar após 1 mês de uso real | Você | Não bloqueia |
 | Q4 | Vale conectar transações a `accounts` (Nubank Cartão, Dinheiro) na UI, ou `account_id` continua sempre nulo? | Você | Não bloqueia (tabela existe, ninguém escreve nela) |
-| ~~Q5~~ | ~~**Onde hospedar?**~~ | — | Resolvida em 2026-08-15: **VM Always Free da Oracle Cloud** (Ampere A1, ARM, 2 OCPU / 12 GB, Ubuntu 24.04), rodando a mesma stack `docker compose`, com domínio `tinocot.com` e TLS pelo Caddy (§12, Fase 11). Procedimento em [`docs/DEPLOY.md`](./DEPLOY.md) |
+| ~~Q5~~ | ~~**Onde hospedar?**~~ | — | Respondida três vezes; vale a última. **2026-08-15:** Oracle Always Free — nunca subiu (`Out of host capacity`). **2026-08-16:** netcup VPS piko, escolhido pelo estudo de [`docs/HOSTING.md`](./HOSTING.md). **2026-08-19 (vale esta):** **VM `e2-micro` do Always Free da Google Cloud**, `us-east1`, Ubuntu 24.04, IP fixo `35.211.95.169`, domínio `financas.tinocot.com` e TLS pelo Caddy — ~R$ 20/mês, que é só o IPv4. A comparação de preço com a AWS está na [Parte 7 do HOSTING](./HOSTING.md#parte-7--gcp--aws-qual-das-duas-é-a-mais-barata); o procedimento, em [`docs/DEPLOY.md`](./DEPLOY.md) |
 
 ## 12. Decisões assumidas (mude se discordar)
 
@@ -643,9 +675,11 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
 - **Snapshot de patrimônio é por dia** (`unique (asset_id, date)`): atualizar o valor de um
   ativo duas vezes no mesmo dia sobrescreve, em vez de criar duas linhas. A evolução
   mensal usa o último snapshot de cada mês.
-- **Ajustes fica no header, não na tab bar** (Fase 3): as 5 abas são os fluxos diários e a
-  zona do polegar vale mais que um sexto ícone. `/settings` reúne A categorizar, Regras e
-  Categorias — esta última era uma página órfã, sem link de lugar nenhum.
+- **Ajustes fica no header, não na tab bar** (Fase 3): as abas são os fluxos diários, e
+  configuração não é um deles. `/settings` reúne A categorizar, Regras e Categorias — esta
+  última era uma página órfã, sem link de lugar nenhum. O argumento original era também o de
+  não gastar um sexto ícone; o sexto ícone foi gasto na Fase 13, mas com uma aba de uso
+  diário — o que não muda o lugar de Ajustes.
 - **Cada import mora na aba que ele alimenta** (Fase 7): o botão "Importar" do CSV da fatura
   fica em **Extrato mensal**, ao lado de "Nova", e o da posição da XP em **Patrimônio**, ao
   lado de "Novo" — nenhum dos dois em Ajustes. Subir arquivo é uma forma de lançar dados
@@ -654,9 +688,27 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
   aba de origem.
 - **A tab bar tem só substantivos; lançar é o FAB** (Fase 5): a aba de `/transactions` se
   chama **Extrato**, não "Lançar" — ela leva à lista do mês, e um rótulo em verbo prometia
-  um formulário. As cinco abas nomeiam *lugares* (Resumo, Extrato, Patrimônio, Tendências,
-  Tarefas — a última era Orçamento até a Fase 12); a única *ação* de rotina, registrar
-  despesa, continua no botão "+" flutuante do Resumo, que é o que o §9 exige (1 toque).
+  um formulário. As abas nomeiam *lugares* (Resumo, Extrato, Patrimônio, Tendências, Tarefas
+  e Compras — Tarefas era Orçamento até a Fase 12, Compras entrou na Fase 13); a única *ação*
+  de rotina, registrar despesa, continua no botão "+" flutuante do Resumo, que é o que o §9
+  exige (1 toque).
+- **A tab bar passou a ter seis abas** (Fase 13): a Fase 3 tinha registrado que "a zona do
+  polegar vale mais que um sexto ícone", e o sexto ícone foi gasto assim mesmo — em Compras,
+  que é uso diário, e não em Ajustes, que continua no header. O custo é real e foi aceito:
+  cada aba cai de ~75px para ~62px no celular, o que obrigou **Patrimônio** e **Tendências** a
+  ganharem `shortLabel` ("Patrim." e "Tend.") para não quebrarem em duas linhas. A alternativa
+  considerada era pendurar as listas dentro da aba Tarefas como sub-abas; foi recusada porque
+  uma lista de mercado é aberta no supermercado, com uma mão só, e um toque a mais para chegar
+  nela é o toque que faz a pessoa não abrir.
+- **As duas listas são duas rotas** (Fase 13): `/shopping/home` e `/shopping/market`, não um
+  estado de client dentro de uma tela só. Cada lista é um *lugar* — dá para chegar nela pelo
+  botão de voltar, por um bookmark e pela tab bar — e a contagem de pendentes da outra lista,
+  que a faixa de sub-abas mostra, é metade do motivo de olhar para a faixa. `/shopping` sozinho
+  redireciona para `home`; a tab bar aponta direto para a rota final, sem hop de redirect.
+- **Limpar comprados é escopado na lista** (Fase 13): `deleteDoneShoppingItems(list)` recebe a
+  lista e o formulário carrega um `<input type="hidden" name="list">`. A versão sem escopo —
+  a mesma que a checklist usa, onde só existe uma lista — apagaria o que a casa já comprou
+  junto com o carrinho do mercado, e é um estrago silencioso: some o histórico de outra tela.
 - **Regra salva é aplicada ao backlog** (Fase 3): salvar "uber → Transporte" categoriza na
   hora os lançamentos que já estavam esperando (`applyRuleToQueue`), não só os próximos
   imports — vale para regra criada pela fila, criada em Ajustes → Regras e também para
@@ -843,19 +895,23 @@ Cada fase termina com o app funcionando de ponta a ponta no stack local. Uma fas
   daltonismo (laranja↔verde, ΔE 4,8). Patrimônio é série única, então não há cor
   codificando nada e a linha volta a ser a forma certa. As duas telas usam o mesmo
   componente (`components/month-line-chart.tsx`).
-- **VM Always Free da Oracle, não PaaS nem casa** (Fase 11, resposta ao §11 Q5): 2 OCPU ARM
-  e 12 GB por R$ 0 indefinidamente é a única oferta gratuita em que a stack de quatro
-  containers cabe *inteira*, com disco de verdade e sem nada pausando por inatividade — que
-  era o defeito do Supabase hospedado (§5.1). Um PaaS transformaria o Postgres num add-on
-  pago ou efêmero, e aí a stack deixaria de ser a mesma nos dois lugares, que é a propriedade
-  que as Fases 9 e 10 compraram. Máquina em casa depende do link, do NAT e da energia da
-  casa. O custo real da escolha é operação: certificado, backup e atualização de SO são seus
-  — e é por isso que o resto desta fase existe.
-  Duas armadilhas do alvo, ambas registradas em `docs/DEPLOY.md`: a conta precisa estar em
-  **Pay As You Go** (continua R$ 0, e é o que tira a instância da política de recuperação por
-  ociosidade — um app de duas pessoas fica abaixo dos 20% de CPU/rede/memória que ela mira),
-  e a criação da A1 falha com *"Out of host capacity"* com frequência, que não é erro de
-  configuração.
+- **VM `e2-micro` do Always Free da GCP, não PaaS nem casa** (Fase 11, resposta ao §11 Q5;
+  decidido em 2026-08-19): a stack de cinco containers precisa de 305 MiB e de um disco de
+  verdade, e nada pode pausar por inatividade — que era o defeito do Supabase hospedado
+  (§5.1). Um PaaS transformaria o Postgres num add-on pago ou efêmero, e aí a stack deixaria
+  de ser a mesma nos dois lugares, que é a propriedade que as Fases 9 e 10 compraram; máquina
+  em casa depende do link, do NAT e da energia da casa.
+  **Por que a GCP e não a AWS** ([HOSTING Parte 7](./HOSTING.md#parte-7--gcp--aws-qual-das-duas-é-a-mais-barata)):
+  a GCP é a única das duas com compute que não expira — 1 `e2-micro` e 30 GB de disco por
+  mês, para sempre —, então a conta recorrente é só o IPv4 público (US$ 0,005/h, ~R$ 20/mês).
+  A AWS não tem equivalente desde 15/07/2025: o mais barato que serve lá é o Lightsail de
+  1 GB, US$ 7/mês. Trocamos ~R$ 10/mês a mais que o VPS anterior por ~110 ms a menos de
+  latência (`us-east1` fica a ~150 ms do Brasil, contra 259 ms de Nuremberg).
+  **O que a escolha cobra:** operação é sua (certificado, backup, SO); 1 GB de RAM só cabe
+  porque o build mora no CI desde a Fase 13; o disco grátis é HDD; e nuvem não tem teto de
+  gasto — o antídoto é um alerta de orçamento e o fato de o custo de saída ser baixo
+  (`pnpm db:dump`, `db:restore --remote` e um compose que é igual em qualquer lugar).
+
 - **Domínio próprio com Caddy emitindo Let's Encrypt, não túnel** (Fase 11): `tinocot.com`,
   com A/AAAA apontando direto para o IP da VM e o Caddy resolvendo o certificado em 80/443.
   A alternativa era `cloudflared`, que dispensaria abrir porta — mas acrescenta um daemon na

@@ -2,21 +2,26 @@
 /**
  * Dumps the database. One script, three jobs:
  *
- *   pnpm db:dump                          # the stack you are pointed at, into deploy/backups/
- *   pnpm db:dump --label daily --keep 7   # what the systemd timer runs on the VM
- *   pnpm db:dump --remote                 # dump on the VM and bring a copy back here
+ *   pnpm db:dump                          # the stack on this machine, into deploy/backups/
+ *   pnpm db:dump --label daily --keep 7   # the shape the nightly dump has (see below)
+ *   pnpm db:dump --remote                 # dump the VM's database, straight into a file here
  *
  * They are the same job on purpose. The dump that migrates your laptop's real data to the
  * new server, the one taken before every migration, and the nightly one all have to be
  * restorable by the same `pnpm db:restore` — a backup format that only one of the three
- * produces is a backup you find out about during the restore.
+ * produces is a backup you find out about during the restore. The flags live in one place,
+ * `dumpCommand` in lib/db.mjs; `deploy/backup.sh`, which is what the VM's systemd timer
+ * runs because there is no Node up there, repeats them and says so.
+ *
+ * `--remote` streams: `pg_dump` runs inside the VM's `db` container and its stdout comes
+ * down the SSH connection into the local file. No intermediate file on the VM, nothing to
+ * copy afterwards, and nothing left behind if it fails halfway.
  *
  * Options:
  *   --label <name>   groups dumps and scopes the pruning (default: manual)
  *   --keep <n>       keep the n newest dumps *of this label*; older ones are deleted
  *   --out <file>     write here instead of deploy/backups/<label>-<timestamp>.dump
- *   --remote         run on the VM over SSH
- *   --no-download    with --remote, leave the dump there instead of copying it here
+ *   --remote         dump the VM's database instead of this machine's
  */
 
 import { createReadStream, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
@@ -33,15 +38,14 @@ import {
   readInstallEnv,
   step,
 } from './lib/proc.mjs';
-import { inRepo, readDeployConfig, scpDown, sshCapture } from './lib/remote.mjs';
+import { createRemoteCompose, readDeployConfig } from './lib/remote.mjs';
 
 function parseArgs(argv) {
-  const options = { label: 'manual', keep: null, out: null, remote: false, download: true };
+  const options = { label: 'manual', keep: null, out: null, remote: false };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--remote') options.remote = true;
-    else if (arg === '--no-download') options.download = false;
     else if (arg === '--label') options.label = argv[(index += 1)];
     else if (arg === '--keep') options.keep = Number(argv[(index += 1)]);
     else if (arg === '--out') options.out = argv[(index += 1)];
@@ -94,11 +98,14 @@ function prune(directory, label, keep) {
  *
  * Cheap, and it is the difference between a backup and a file. A dump truncated by a full
  * disk or a container killed mid-write still looks fine in `ls`; pg_restore --list is what
- * notices, now, instead of during the restore you needed it for.
+ * notices, now, instead of during the restore you needed it for. Read by the same container
+ * that wrote it — for `--remote` that means the file goes back up the SSH connection, which
+ * for a dump measured in hundreds of kB is a rounding error and checks the bytes that
+ * actually landed here.
  */
-async function verify(isServer, path) {
+async function verify(compose, path) {
   const { code, stdout } = await pipeIntoCapturing(
-    isServer,
+    compose,
     ['pg_restore', '--list'],
     createReadStream(path),
   );
@@ -116,77 +123,52 @@ function humanSize(path) {
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-async function dumpHere(options) {
+/** Which stack to dump, and what to say about it. */
+async function target(options) {
+  if (options.remote) {
+    const config = readDeployConfig();
+    return { compose: createRemoteCompose(config), where: `na VM (${config.host})` };
+  }
   await ensureDocker();
-  const env = readInstallEnv();
-  const isServer = isServerInstall(env);
-  const compose = createCompose(isServer);
+  return { compose: createCompose(isServerInstall(readInstallEnv())), where: 'aqui' };
+}
+
+async function dump(options) {
+  const { compose, where } = await target(options);
 
   if (compose(['ps', '-q', 'db'], { stdio: ['ignore', 'pipe', 'pipe'] }).stdout.trim() === '') {
-    fail('O container `db` não está de pé — suba a stack antes (pnpm stack up).');
+    fail(`O container \`db\` não está de pé ${where} — suba a stack antes.`);
   }
 
-  const directory = options.out ? null : backupDir(env);
+  // Always written here: a dump that stays on the same disk as the database it came from is
+  // not a backup, and this is the command that fixes that for the VM.
+  const directory = options.out ? null : backupDir();
   if (directory) mkdirSync(directory, { recursive: true });
 
-  const target = options.out
+  const file = options.out
     ? resolve(process.cwd(), options.out)
     : resolve(directory, `${options.label}-${timestamp()}.dump`);
 
   // Written under a partial name and renamed at the end: a dump interrupted halfway never
   // gets a name that `--latest` would pick up.
-  const partial = `${target}.partial`;
-  step(`Dump de public + auth + supabase_migrations → ${basename(target)}`);
+  const partial = `${file}.partial`;
+  step(`Dump de public + auth + supabase_migrations ${where} → ${basename(file)}`);
 
-  const code = await dumpTo(isServer, partial);
+  const code = await dumpTo(compose, partial);
   if (code !== 0) {
     rmSync(partial, { force: true });
     fail('pg_dump falhou.');
   }
-  renameSync(partial, target);
+  renameSync(partial, file);
 
-  const objects = await verify(isServer, target);
-  ok(`${basename(target)} — ${humanSize(target)}, ${objects} objetos`);
+  const objects = await verify(compose, file);
+  ok(`${basename(file)} — ${humanSize(file)}, ${objects} objetos`);
 
   if (directory && options.keep) prune(directory, options.label, options.keep);
 
-  // Machine-readable last line: --remote greps it to know what to copy down.
-  console.log(`wrote ${target}`);
-  return target;
+  // Machine-readable last line, for anything that wants to know what was written.
+  console.log(`wrote ${file}`);
+  return file;
 }
 
-async function dumpOnServer(options) {
-  const config = readDeployConfig();
-  const flags = ['--label', options.label];
-  if (options.keep) flags.push('--keep', String(options.keep));
-
-  step(`Dump na VM (${config.host})…`);
-  const result = sshCapture(
-    config,
-    inRepo(config, `node scripts/db-backup.mjs ${flags.join(' ')}`),
-  );
-  process.stdout.write(result.stdout ?? '');
-  if (result.status !== 0) {
-    process.stderr.write(result.stderr ?? '');
-    fail('O dump na VM falhou.');
-  }
-
-  const remotePath = (result.stdout.match(/^wrote (.+)$/m) ?? [])[1];
-  if (!remotePath) fail('A VM não disse onde gravou o dump.');
-
-  if (!options.download) return remotePath;
-
-  const directory = backupDir();
-  mkdirSync(directory, { recursive: true });
-  const localPath = resolve(directory, basename(remotePath));
-
-  step(`Trazendo uma cópia para ${basename(localPath)}…`);
-  if (scpDown(config, remotePath, localPath).status !== 0) {
-    fail('Não consegui copiar o dump da VM.');
-  }
-  ok(`cópia local em ${localPath}`);
-  return localPath;
-}
-
-const options = parseArgs(process.argv.slice(2));
-await (options.remote ? dumpOnServer(options) : dumpHere(options));
+await dump(parseArgs(process.argv.slice(2)));

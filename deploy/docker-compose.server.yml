@@ -4,9 +4,9 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.server.yml --profile web up -d
 #
-# You do not type that: `pnpm stack up` on the VM adds both files by itself, because the
-# VM's deploy/.env says DEPLOY_TARGET=server. Written by `scripts/gen-secrets.mjs --server`
-# during `pnpm server init`.
+# You do not type that: `pnpm server` adds both files by itself over SSH, and the VM's
+# deploy/.env (written by `scripts/gen-secrets.mjs --server` during `pnpm server init`)
+# marks the installation with DEPLOY_TARGET=server.
 #
 # Keeping the difference in one small file is the point: images, wiring, secrets, healthchecks
 # and the order of boot are the same objects here and on the laptop, so "works locally" keeps
@@ -38,6 +38,16 @@ services:
       GOTRUE_SITE_URL: https://${DOMAIN:?}
 
   web:
+    # The image the CI built, pulled from GHCR — never built here. The VM has 1 GB of RAM
+    # and the `next build` needs ~1150 MiB of it (docs/HOSTING.md §1.1), which is the whole
+    # reason this line exists: the build moved to GitHub Actions and the VM became a
+    # container host. This `image:` wins over the base file's `financas-web:local` in the
+    # merge, so `up` here starts the published tag and nothing else.
+    #
+    # `:?` with no default on purpose: a deploy that forgot which version it is deploying
+    # should refuse to start, not silently keep serving whatever is already running.
+    # `pnpm server` writes WEB_IMAGE_TAG into this installation's .env on every deploy.
+    image: ghcr.io/danilomendes12/my-financial-app/web:${WEB_IMAGE_TAG:?defina WEB_IMAGE_TAG — pnpm server grava}
     # No ports: the app is reached through Caddy, on the compose network, and publishing it
     # would be a second door into the same room. The base file's 127.0.0.1:3000 stays — it
     # is loopback, so it is reachable only over an SSH tunnel, which is what you want when

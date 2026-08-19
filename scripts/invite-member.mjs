@@ -15,19 +15,20 @@
  * and printed once. Idempotent — safe to re-run; an existing user keeps its password.
  *
  *   pnpm db:invite namorada@exemplo.com
+ *   pnpm db:invite --remote namorada@exemplo.com   # against the VM, over an SSH tunnel
  */
 
-import { createUser, readConfig, soleHouseholdId } from './lib/admin.mjs';
+import { createUser, firstArgument, soleHouseholdId, withAdminConfig } from './lib/admin.mjs';
 
-const config = readConfig();
-const email = process.argv[2]?.trim().toLowerCase();
+const argv = process.argv.slice(2);
+const email = firstArgument(argv)?.trim().toLowerCase();
 
 if (!email || !email.includes('@')) {
-  console.error('Usage: pnpm db:invite <email>');
+  console.error('Usage: pnpm db:invite [--remote] <email>');
   process.exit(1);
 }
 
-async function allowlistEmail(householdId) {
+async function allowlistEmail(config, householdId) {
   const response = await fetch(`${config.url}/rest/v1/allowed_emails`, {
     method: 'POST',
     headers: { ...config.headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -39,7 +40,9 @@ async function allowlistEmail(householdId) {
   console.log(`allowlisted ${email} into household ${householdId}`);
 }
 
-const householdId = process.env.HOUSEHOLD_ID ?? (await soleHouseholdId(config));
-await allowlistEmail(householdId);
-await createUser(config, email, { passwordFromEnv: process.env.MEMBER_PASSWORD });
-console.log('done — the invited person signs in with e-mail and password at /login');
+await withAdminConfig(argv, async (config) => {
+  const householdId = process.env.HOUSEHOLD_ID ?? (await soleHouseholdId(config));
+  await allowlistEmail(config, householdId);
+  await createUser(config, email, { passwordFromEnv: process.env.MEMBER_PASSWORD });
+  console.log('done — the invited person signs in with e-mail and password at /login');
+});

@@ -17,21 +17,22 @@
  * (`pnpm db:password` is the way to change it).
  *
  *   pnpm db:owner voce@exemplo.com
+ *   pnpm db:owner --remote voce@exemplo.com   # against the VM, over an SSH tunnel
  */
 
-import { createUser, readConfig } from './lib/admin.mjs';
+import { createUser, firstArgument, withAdminConfig } from './lib/admin.mjs';
 
-const config = readConfig();
+const argv = process.argv.slice(2);
 // The env var is a fallback so `pnpm dev` can pass it through on a fresh install; it is
 // not read from any config file.
-const email = (process.argv[2] ?? process.env.OWNER_EMAIL)?.trim().toLowerCase();
+const email = (firstArgument(argv) ?? process.env.OWNER_EMAIL)?.trim().toLowerCase();
 
 if (!email || !email.includes('@')) {
-  console.error('Usage: pnpm db:owner <email>');
+  console.error('Usage: pnpm db:owner [--remote] <email>');
   process.exit(1);
 }
 
-async function allowlistEmail() {
+async function allowlistEmail(config) {
   const response = await fetch(`${config.url}/rest/v1/allowed_emails`, {
     method: 'POST',
     headers: { ...config.headers, Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -43,6 +44,8 @@ async function allowlistEmail() {
   console.log(`allowlisted ${email}`);
 }
 
-await allowlistEmail();
-await createUser(config, email, { passwordFromEnv: process.env.OWNER_PASSWORD });
-console.log('done — sign in with e-mail and password at /login');
+await withAdminConfig(argv, async (config) => {
+  await allowlistEmail(config);
+  await createUser(config, email, { passwordFromEnv: process.env.OWNER_PASSWORD });
+  console.log('done — sign in with e-mail and password at /login');
+});

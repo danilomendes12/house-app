@@ -52,6 +52,7 @@ Antes de considerar qualquer tarefa concluída: `pnpm typecheck && pnpm lint && 
 ## Regras de negócio que sempre confundem (resumo do SPEC §6)
 
 - **Orçamento não existe mais** (Fase 12): a tabela `budgets`, as telas, `budgetStatus` e a barra de "quanto resta" foram removidos, e a aba virou Tarefas. A barra ao lado de cada categoria no Resumo é a participação dela no mês. Não reintroduza nada disso — a decisão está no SPEC §12.
+- **Compras são duas listas, uma tabela** (Fase 13, SPEC §6.5): `shopping_items.list` é `'home'` (casa) ou `'market'` (supermercado), com CHECK. Toda leitura, contagem e limpeza é escopada por `list` — "limpar comprados" no mercado não pode apagar o que a casa já comprou. Item de compra é só título, como a tarefa: sem quantidade, sem valor, sem categoria.
 - Despesa de cartão conta na **data da compra** (competência); parcela conta na data da fatura em que cai — uma transação por parcela.
 - **Pagamento de fatura não é despesa** — descartar na importação.
 - Estorno = transação `type='income'` na mesma categoria.
@@ -75,6 +76,7 @@ Antes de considerar qualquer tarefa concluída: `pnpm typecheck && pnpm lint && 
 - Escrita nova em `lib/db` tem que passar `household_id` (de `authedClient()`), não só `user_id`: sem ele o insert é recusado pela RLS. `onConflict` de upsert também mudou de escopo — é `household_id,...`.
 - `bigint` não atravessa a fronteira server→client. Formate no servidor (`formatCents`) e passe string para o client component.
 - `exactOptionalPropertyTypes` está ligado: render props do Recharts (`dot`, por exemplo) não aceitam um tipo de props mais estreito que o da lib — tipe pelo Recharts e estreite dentro do corpo.
+- A tab bar tem **seis** abas desde a Fase 13, e o rótulo do celular é o gargalo: acima de ~8 caracteres a aba precisa de `shortLabel` em `components/main-nav.tsx`. Uma sétima aba não cabe — a próxima seção vai para dentro de uma existente ou para o header.
 - Login é **e-mail + senha** (Fase 9). Não existe magic link, `/auth/callback`, `getSiteUrl` nem SMTP em lugar nenhum — se algo pedir "abra o e-mail", é código morto. A resposta de erro do login tem que continuar idêntica para senha errada e para e-mail inexistente.
 - Trocar de senha e recuperar senha **não existem na UI** por decisão (SPEC §12): é `pnpm db:password`. Não construa a tela.
 - **Auth se configura em um lugar só:** o ambiente do GoTrue em `deploy/docker-compose.yml`. `supabase/config.toml` foi esvaziado de propósito na Fase 10 — nada lá é lido, e repor config de auth ali cria uma segunda fonte da verdade que ninguém aplica.
@@ -84,7 +86,9 @@ Antes de considerar qualquer tarefa concluída: `pnpm typecheck && pnpm lint && 
 - `OWNER_EMAIL` é **argumento de bootstrap**, não configuração: `pnpm db:owner <email>` a usa uma vez, numa instalação sem dono, e depois disso quem sabe quem é o dono é o banco. Ela não está no `deploy/.env`, não é lida pelo app e não deve voltar a `lib/env.ts` — ela já esteve lá sem nenhum consumidor.
 - `provision_user` dispara no **insert** em `auth.users`, não no primeiro login: o household existe a partir de `db:owner`, e `db:invite` funciona na hora, sem a pessoa precisar entrar antes.
 - Scripts chamados pelo `stack.mjs` recebem `SUPABASE_URL` **explicitamente** (`webEnv`), porque quem manda na porta é `SUPABASE_API_PORT` e o `SUPABASE_URL` do `deploy/.env` é só o default de execução manual. Deixar o arquivo vencer manda a chave certa para a stack errada, e o sintoma é um 401 seco.
-- Hospedagem é uma **VM Always Free da Oracle** (Ampere A1 ARM, Ubuntu 24.04), domínio `tinocot.com`, TLS pelo Caddy (Fase 11 — SPEC §11 Q5 respondida). O procedimento inteiro está em `docs/DEPLOY.md`; não reinvente nem duplique.
+- Hospedagem é uma **VM `e2-micro` do Always Free da GCP** (projeto `financial-app-506021`, zona `us-east1-b`, x86, Ubuntu 24.04, IP fixo `35.211.95.169`), domínio `financas.tinocot.com`, TLS pelo Caddy (Fase 11 — SPEC §11 Q5 respondida de novo em 2026-08-19). O procedimento inteiro está em `docs/DEPLOY.md`; não reinvente nem duplique. Oracle e netcup são história — o estudo de preço que decidiu está em `docs/HOSTING.md` (Parte 7).
+- **O que é grátis na VM é exatamente `e2-micro` + 30 GB de disco `pd-standard` + Standard Tier de rede.** Trocar o tipo da máquina, pôr disco `balanced`, criar uma segunda VM ou deixar a rede em Premium tira a instalação do free tier — e o único aviso é a fatura. O que se paga hoje é só o IPv4 (US$ 0,005/h).
+- A VM **não tem login root**: o usuário é `financas` (criado pela metadata `ssh-keys`), com sudo sem senha. Todo script remoto já prefixa `$SUDO` quando `id -u` não é 0 — mantenha assim ao acrescentar passos.
 - **O que difere entre laptop e servidor é um arquivo:** `deploy/docker-compose.server.yml` (80/443, `DOMAIN` obrigatório, `web` ligado). Quem decide layerizá-lo é `DEPLOY_TARGET=server` no `deploy/.env` **daquela** instalação, não uma flag. Ao mexer no compose, pergunte se a mudança vale nos dois lugares — se valer, ela vai no arquivo base.
 - `scripts/stack.mjs` é o **mesmo** script nos dois lugares. `scripts/server.mjs` só sabe alcançar a VM por SSH; o que fazer lá dentro continua tendo uma implementação só. Não duplique a sequência de subida em `server.mjs`.
 - O comando é `pnpm server`, **não** `pnpm deploy`: `deploy` é builtin do pnpm e sombrearia o script.

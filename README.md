@@ -63,12 +63,12 @@ pnpm stack reset && pnpm dev              # recria o banco do zero, com seed
 
 ## Documentação
 
-| Arquivo                                  | Conteúdo                                                                   |
-| ---------------------------------------- | -------------------------------------------------------------------------- |
-| [`docs/SPEC.md`](./docs/SPEC.md)         | Requisitos, arquitetura, modelo de dados, import de CSV e plano de fases   |
-| [`docs/DEPLOY.md`](./docs/DEPLOY.md)     | Hospedagem: console da Oracle, deploy, acesso à produção, backup e restore |
-| [`deploy/README.md`](./deploy/README.md) | O que é cada container da stack, e por quê                                 |
-| [`CLAUDE.md`](./CLAUDE.md)               | Contexto e convenções para desenvolvimento com Claude Code                 |
+| Arquivo                                  | Conteúdo                                                                 |
+| ---------------------------------------- | ------------------------------------------------------------------------ |
+| [`docs/SPEC.md`](./docs/SPEC.md)         | Requisitos, arquitetura, modelo de dados, import de CSV e plano de fases |
+| [`docs/DEPLOY.md`](./docs/DEPLOY.md)     | Hospedagem: a VM na GCP, deploy, acesso à produção, backup e restore     |
+| [`deploy/README.md`](./deploy/README.md) | O que é cada container da stack, e por quê                               |
+| [`CLAUDE.md`](./CLAUDE.md)               | Contexto e convenções para desenvolvimento com Claude Code               |
 
 ## Estrutura
 
@@ -158,10 +158,16 @@ Os scripts são idempotentes: rodar de novo **não** troca a senha de quem já e
 
 ## Hospedagem
 
-Uma **VM Always Free da Oracle Cloud** (Ampere A1 ARM, 2 OCPU / 12 GB, Ubuntu 24.04),
-rodando a mesma stack `docker compose`, com TLS do Let's Encrypt em **https://tinocot.com**.
-Custo: R$ 0. O passo a passo — console da Oracle, deploy, backup, restore, acesso — está em
-[`docs/DEPLOY.md`](./docs/DEPLOY.md).
+Uma **VM `e2-micro` do Always Free do Google Compute Engine** (2 vCPU compartilhados, 1 GB,
+30 GB, `us-east1`, Ubuntu 24.04), rodando a mesma stack `docker compose`, com TLS do Let's
+Encrypt em **https://financas.tinocot.com**. A imagem do app vem do GHCR, construída pelo CI —
+a VM é host de containers, não máquina de build.
+
+Custo: **~R$ 20/mês**, e é só o IPv4 público — a VM e o disco estão no free tier que não
+expira. A comparação com a AWS que levou a essa escolha está na
+[Parte 7 do `docs/HOSTING.md`](./docs/HOSTING.md#parte-7--gcp--aws-qual-das-duas-é-a-mais-barata);
+o passo a passo — o que o `gcloud` já fez, o que sobra para você, deploy, backup, restore,
+acesso — está em [`docs/DEPLOY.md`](./docs/DEPLOY.md).
 
 ```bash
 pnpm server init --owner voce@exemplo.com   # uma vez, numa VM recém-criada
@@ -210,5 +216,5 @@ vai no dump); as sessões de outra instalação, não.
 - [x] Fase 8 — Carteira (alocação, rentabilidade por período, aporte vs. valorização)
 - [x] Fase 9 — Self-hosted (login por senha, imagem portátil, `docker compose`)
 - [x] Fase 10 — Um fluxo só (stack única em Docker, fim da stack paralela da CLI)
-- [x] Fase 11 — Hospedagem (VM Always Free da Oracle, TLS em tinocot.com, backup com restore testado)
+- [x] Fase 11 — Hospedagem (VM `e2-micro` do Always Free da GCP, TLS em financas.tinocot.com, backup com restore testado)
 - [x] Fase 12 — Tarefas (fim do orçamento; a aba virou a checklist compartilhada da casa)

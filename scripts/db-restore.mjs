@@ -5,8 +5,8 @@
  *
  *   pnpm db:restore --latest                    # the newest dump in deploy/backups/
  *   pnpm db:restore deploy/backups/daily-….dump
- *   pnpm db:restore --remote --latest           # restore the VM's newest dump, on the VM
  *   pnpm db:restore --remote <arquivo local>    # send this dump up and restore it there
+ *   pnpm db:restore --remote --latest           # restore the VM's own newest dump, up there
  *
  * What it does, and why in this order:
  *
@@ -49,12 +49,30 @@ import {
   isServerInstall,
   ok,
   readInstallEnv,
-  run,
   repoRoot,
+  run,
+  shellQuote,
   step,
   warn,
 } from './lib/proc.mjs';
-import { inRepo, readDeployConfig, scpUp, ssh } from './lib/remote.mjs';
+import {
+  createRemoteCompose,
+  inDeployDir,
+  readDeployConfig,
+  ssh,
+  sshCapture,
+} from './lib/remote.mjs';
+
+/** All or nothing: a failure halfway would leave a database that looks restored and is not. */
+const restoreCommand = [
+  'pg_restore',
+  '-U',
+  adminRole,
+  '-d',
+  'postgres',
+  '--single-transaction',
+  '--exit-on-error',
+];
 
 function parseArgs(argv) {
   const options = { file: null, latest: false, remote: false, yes: false };
@@ -97,84 +115,121 @@ async function confirm(question) {
   return answer.trim().toLowerCase() === 'sim';
 }
 
-async function restoreHere(options) {
+/**
+ * Where the dump's bytes are, and how to feed them to a command in the `db` container.
+ *
+ * Two shapes, because the two useful restores are genuinely different journeys: a file on
+ * this machine goes *up* the SSH connection into pg_restore's stdin, and a file already on
+ * the VM never leaves it — the redirection happens up there, in one command.
+ */
+function fileHere(path) {
+  return {
+    name: basename(path),
+    feed: (target, command) => pipeInto(target.compose, command, createReadStream(path)),
+    feedCapturing: (target, command) =>
+      pipeIntoCapturing(target.compose, command, createReadStream(path)),
+  };
+}
+
+function fileOnServer(config, path) {
+  const remote = (command, capture) => {
+    const script = inDeployDir(
+      config,
+      'docker compose -f docker-compose.yml -f docker-compose.server.yml exec -T db ' +
+        `${command.map(shellQuote).join(' ')} < ${path}`,
+    );
+    return capture ? sshCapture(config, script) : ssh(config, script);
+  };
+
+  return {
+    name: basename(path),
+    feed: (_target, command) => remote(command, false).status,
+    feedCapturing: (_target, command) => {
+      const result = remote(command, true);
+      return { code: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+    },
+  };
+}
+
+/** Which stack gets replaced, and how it takes its own safety dump before that happens. */
+async function localTarget() {
   await ensureDocker();
-  const env = readInstallEnv();
-  const isServer = isServerInstall(env);
-  const compose = createCompose(isServer);
+  const isServer = isServerInstall(readInstallEnv());
+  return {
+    compose: createCompose(isServer),
+    withApp: isServer,
+    what: 'o banco local',
+    // The safety net for the restore itself. Cheap, and the one moment you will wish you had
+    // it is the moment you restored the wrong file.
+    dump: (label, keep) =>
+      run(
+        'node',
+        [resolve(repoRoot, 'scripts/db-backup.mjs'), '--label', label, '--keep', String(keep)],
+        { cwd: repoRoot, stdio: 'inherit' },
+      ).status,
+  };
+}
 
-  const file = options.latest ? newestDump() : resolve(process.cwd(), options.file);
-  if (!existsSync(file)) fail(`Não achei ${file}.`);
+function remoteTarget(config) {
+  return {
+    compose: createRemoteCompose(config),
+    withApp: true,
+    what: `o banco de PRODUÇÃO em ${config.host}`,
+    // The same shell script the nightly timer runs, with the same pg_dump flags — the VM
+    // has no Node to run db-backup.mjs with.
+    dump: (label, keep) =>
+      ssh(config, inDeployDir(config, `./backup.sh --label ${label} --keep ${keep}`)).status,
+  };
+}
 
-  if (compose(['ps', '-q', 'db'], { stdio: ['ignore', 'pipe', 'pipe'] }).stdout.trim() === '') {
+async function restore(target, source, options) {
+  if (
+    target.compose(['ps', '-q', 'db'], { stdio: ['ignore', 'pipe', 'pipe'] }).stdout.trim() === ''
+  ) {
     fail(
       'O container `db` não está de pé. O restore precisa de uma stack que já bootou uma vez:\n' +
-        'os roles e as extensões vêm da imagem, não do dump. Rode `pnpm stack up` antes.',
+        'os roles e as extensões vêm da imagem, não do dump.',
     );
   }
 
-  step(`Conferindo ${basename(file)}…`);
-  const listing = await pipeIntoCapturing(
-    isServer,
-    ['pg_restore', '--list'],
-    createReadStream(file),
-  );
-  if (listing.code !== 0) fail(`${file} não é um dump legível — nada foi tocado.`);
+  step(`Conferindo ${source.name}…`);
+  const listing = await source.feedCapturing(target, ['pg_restore', '--list']);
+  if (listing.code !== 0) fail(`${source.name} não é um dump legível — nada foi tocado.`);
   ok(
     `${listing.stdout.split('\n').filter((line) => line && !line.startsWith(';')).length} objetos`,
   );
 
-  const before = summarize(compose);
+  const before = summarize(target.compose);
   if (before) {
     warn(
-      `A instalação atual tem ${before.users} usuário(s), ${before.transactions} transações e ` +
+      `${target.what} tem ${before.users} usuário(s), ${before.transactions} transações e ` +
         `${before.assets} ativos. O restore substitui tudo isso.`,
     );
   }
 
-  if (!options.yes && !(await confirm('Substituir o banco por este dump?'))) {
+  if (!options.yes && !(await confirm(`Substituir ${target.what} por este dump?`))) {
     fail('Cancelado — nada foi alterado.');
   }
 
-  // The safety net for the restore itself. Cheap, and the one moment you will wish you had
-  // it is the moment you restored the wrong file.
   if (before && Number(before.users) > 0) {
     step('Dump de segurança do estado atual, antes de destruí-lo…');
-    const safety = run(
-      'node',
-      [resolve(repoRoot, 'scripts/db-backup.mjs'), '--label', 'pre-restore', '--keep', '3'],
-      { cwd: repoRoot, stdio: 'inherit' },
-    );
-    if (safety.status !== 0) fail('Não consegui tirar o dump de segurança — parando aqui.');
+    if (target.dump('pre-restore', 3) !== 0) {
+      fail('Não consegui tirar o dump de segurança — parando aqui.');
+    }
   }
 
   // With the profile enabled either way, so this reads the same whether or not `web` runs
   // here — `docker compose stop web` on a disabled profile is an error, not a no-op.
   step('Parando auth, rest e web…');
-  compose([...allProfiles, 'stop', 'auth', 'rest', 'web'], {
+  target.compose([...allProfiles, 'stop', 'auth', 'rest', 'web'], {
     stdio: ['ignore', 'ignore', 'inherit'],
   });
 
   step('Apagando public, auth e supabase_migrations…');
-  if (dropSchemas(compose).status !== 0) fail('Não consegui limpar o banco.');
+  if (dropSchemas(target.compose).status !== 0) fail('Não consegui limpar o banco.');
 
   step('Restaurando…');
-  const code = await pipeInto(
-    isServer,
-    [
-      'pg_restore',
-      '-U',
-      adminRole,
-      '-d',
-      'postgres',
-      // All or nothing: a failure halfway through would otherwise leave a database that
-      // looks restored and is not.
-      '--single-transaction',
-      '--exit-on-error',
-    ],
-    createReadStream(file),
-  );
-  if (code !== 0) {
+  if ((await source.feed(target, restoreCommand)) !== 0) {
     fail(
       'pg_restore falhou e desfez tudo — o banco está vazio.\n' +
         'O dump de segurança acima ainda é válido: `pnpm db:restore --latest` volta ao estado anterior.',
@@ -182,13 +237,11 @@ async function restoreHere(options) {
   }
 
   step('Subindo a stack de novo…');
-  const args = isServer ? ['--profile', 'web', 'up', '-d', '--wait'] : ['up', '-d', '--wait'];
-  if (compose(args).status !== 0) {
-    fail('A stack não voltou saudável. Veja: pnpm stack logs');
-  }
+  const up = target.withApp ? ['--profile', 'web', 'up', '-d', '--wait'] : ['up', '-d', '--wait'];
+  if (target.compose(up).status !== 0) fail('A stack não voltou saudável.');
 
-  const after = summarize(compose);
-  if (!after) fail('Restaurei, mas não consegui ler o banco de volta. Veja: pnpm stack logs db');
+  const after = summarize(target.compose);
+  if (!after) fail('Restaurei, mas não consegui ler o banco de volta.');
 
   ok(
     `restaurado: ${after.users} usuário(s), ${after.households} household(s), ` +
@@ -205,28 +258,30 @@ async function restoreHere(options) {
   );
 }
 
-async function restoreOnServer(options) {
-  const config = readDeployConfig();
-
-  // The local file is checked before asking, and uploaded only after: no point pushing a
-  // dump over the wire to then be told no.
-  const local = options.latest ? null : resolve(process.cwd(), options.file);
-  if (local && !existsSync(local)) fail(`Não achei ${local}.`);
-
-  warn(`Isto substitui o banco de PRODUÇÃO em ${config.host}.`);
-  if (!options.yes && !(await confirm('Tem certeza?'))) fail('Cancelado — nada foi alterado.');
-
-  let remoteFile = '--latest';
-  if (local) {
-    remoteFile = `${config.path}/deploy/backups/${basename(local)}`;
-    step(`Enviando ${basename(local)} para a VM…`);
-    ssh(config, `mkdir -p ${config.path}/deploy/backups`);
-    if (scpUp(config, local, remoteFile).status !== 0) fail('Não consegui enviar o dump.');
-  }
-
-  const result = ssh(config, inRepo(config, `node scripts/db-restore.mjs ${remoteFile} --yes`));
-  if (result.status !== 0) fail('O restore na VM falhou.');
+/** The VM's newest dump, resolved up there — the rollback case, with nothing to transfer. */
+function newestDumpOnServer(config) {
+  const result = sshCapture(
+    config,
+    inDeployDir(config, 'ls -1t backups/*.dump 2>/dev/null | head -1'),
+  );
+  const path = result.stdout.trim();
+  if (result.status !== 0 || !path) fail('Nenhum .dump em deploy/backups/ na VM.');
+  return path;
 }
 
 const options = parseArgs(process.argv.slice(2));
-await (options.remote ? restoreOnServer(options) : restoreHere(options));
+
+if (options.remote) {
+  const config = readDeployConfig();
+  // The local file is checked before anything else: no point starting a restore of a file
+  // that is not there.
+  const local = options.file ? resolve(process.cwd(), options.file) : null;
+  if (local && !existsSync(local)) fail(`Não achei ${local}.`);
+
+  const source = local ? fileHere(local) : fileOnServer(config, newestDumpOnServer(config));
+  await restore(remoteTarget(config), source, options);
+} else {
+  const file = options.latest ? newestDump() : resolve(process.cwd(), options.file);
+  if (!existsSync(file)) fail(`Não achei ${file}.`);
+  await restore(await localTarget(), fileHere(file), options);
+}

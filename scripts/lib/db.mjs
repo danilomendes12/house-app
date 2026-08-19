@@ -6,12 +6,16 @@
  * load-bearing: the client tools then always match the server version (17.6 here — a dump
  * taken by an older pg_dump is a dump you cannot restore), and port 5432 stays unpublished
  * to anything but loopback.
+ *
+ * Every function here takes a `compose` — `createCompose` for the stack on this machine,
+ * `createRemoteCompose` for the VM's, over SSH. Same commands, same flags, either side:
+ * that is what keeps the nightly dump, the pre-migration dump and `pnpm db:dump` a single
+ * format, which is the only kind of backup worth having.
  */
 
 import { createWriteStream } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { deployDir } from './proc.mjs';
 
 /**
  * The three schemas that *are* this installation.
@@ -45,30 +49,31 @@ export const adminRole = 'supabase_admin';
 
 const schemaFlags = backedUpSchemas.flatMap((schema) => [`--schema=${schema}`]);
 
-/** `docker compose exec -T db …`, as the array of arguments for spawn. */
-function execArgs(isServer, command) {
-  const files = isServer ? ['-f', 'docker-compose.yml', '-f', 'docker-compose.server.yml'] : [];
-  return ['compose', ...files, 'exec', '-T', 'db', ...command];
-}
+/**
+ * The one pg_dump command line in this repository.
+ *
+ * `deploy/backup.sh` — the nightly dump, which runs on a VM with no Node on it — repeats
+ * these flags by hand, because a shell script cannot import this file. If they ever change
+ * here, they change there in the same commit: a dump only one of the two produces is a
+ * backup you find out about during the restore.
+ */
+export const dumpCommand = [
+  'pg_dump',
+  '-U',
+  adminRole,
+  '-d',
+  'postgres',
+  // Custom format: compressed, and restorable with --single-transaction so a failed
+  // restore leaves nothing half-loaded.
+  '--format=custom',
+  ...schemaFlags,
+];
 
 /** Runs a command in the db container, streaming its stdout into `destination`. */
-export async function dumpTo(isServer, destination) {
+export async function dumpTo(compose, destination) {
   const file = createWriteStream(destination);
-  const child = spawn(
-    'docker',
-    execArgs(isServer, [
-      'pg_dump',
-      '-U',
-      adminRole,
-      '-d',
-      'postgres',
-      // Custom format: compressed, and restorable with --single-transaction so a failed
-      // restore leaves nothing half-loaded.
-      '--format=custom',
-      ...schemaFlags,
-    ]),
-    { cwd: deployDir, stdio: ['ignore', 'pipe', 'inherit'] },
-  );
+  const { command, args, options } = compose.spawn(['exec', '-T', 'db', ...dumpCommand]);
+  const child = spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'inherit'] });
 
   // Both listeners registered *before* the pipe starts. `once` only hears events that fire
   // after it is called, and on a small database the file can close before the await is
@@ -83,9 +88,10 @@ export async function dumpTo(isServer, destination) {
 }
 
 /** Feeds a file into a command inside the db container. Returns its exit code. */
-export async function pipeInto(isServer, command, source) {
-  const child = spawn('docker', execArgs(isServer, command), {
-    cwd: deployDir,
+export async function pipeInto(compose, command, source) {
+  const spec = compose.spawn(['exec', '-T', 'db', ...command]);
+  const child = spawn(spec.command, spec.args, {
+    ...spec.options,
     stdio: ['pipe', 'inherit', 'inherit'],
   });
   const exited = once(child, 'close');
@@ -95,9 +101,10 @@ export async function pipeInto(isServer, command, source) {
 }
 
 /** Same, but capturing stdout — for the archive's table of contents. */
-export async function pipeIntoCapturing(isServer, command, source) {
-  const child = spawn('docker', execArgs(isServer, command), {
-    cwd: deployDir,
+export async function pipeIntoCapturing(compose, command, source) {
+  const spec = compose.spawn(['exec', '-T', 'db', ...command]);
+  const child = spawn(spec.command, spec.args, {
+    ...spec.options,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 

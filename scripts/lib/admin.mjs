@@ -3,11 +3,18 @@
  *
  * They all talk to the same two APIs with the service role key: GoTrue's admin endpoints
  * (`/auth/v1/admin/users`) and PostgREST (`/rest/v1/...`).
+ *
+ * All three take `--remote`, which points them at the VM instead of this machine. There is
+ * no second copy of the production keys here for that: the VM's own deploy/.env is read
+ * over SSH, held in memory for the length of the command, and the API is reached through an
+ * SSH tunnel — its port is published on the VM's loopback and nowhere else.
  */
 
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+
+import { readDeployConfig, readRemoteEnv, withTunnel } from './remote.mjs';
 
 /**
  * Reads deploy/.env — the only env file in the repository. Variables already set in the
@@ -16,6 +23,18 @@ import { resolve } from 'node:path';
 export function loadLocalEnv() {
   const envFile = resolve(process.cwd(), 'deploy/.env');
   if (existsSync(envFile)) process.loadEnvFile(envFile);
+}
+
+/** An endpoint plus the service-role key that opens it. */
+function configFor(url, serviceRoleKey) {
+  return {
+    url,
+    headers: {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      'Content-Type': 'application/json',
+    },
+  };
 }
 
 /**
@@ -36,13 +55,31 @@ export function readConfig() {
     process.exit(1);
   }
 
-  const headers = {
-    apikey: serviceRoleKey,
-    Authorization: `Bearer ${serviceRoleKey}`,
-    'Content-Type': 'application/json',
-  };
+  return configFor(url, serviceRoleKey);
+}
 
-  return { url, headers };
+/** The first thing on the command line that is not a flag — the e-mail, in all three. */
+export function firstArgument(argv) {
+  return argv.find((arg) => !arg.startsWith('--'));
+}
+
+/**
+ * Runs `fn(config)` against this machine's stack, or against the VM's with `--remote`.
+ *
+ * The tunnel is opened for the length of `fn` and closed whatever happens, and the local
+ * end is a port chosen at runtime — never 8000, which is exactly the port the local stack
+ * holds. Provisioning a user in the wrong household is the kind of mistake that is quiet
+ * for weeks.
+ */
+export async function withAdminConfig(argv, fn) {
+  if (!argv.includes('--remote')) return fn(readConfig());
+
+  const deploy = readDeployConfig();
+  const remoteEnv = readRemoteEnv(deploy);
+
+  return withTunnel(deploy, Number(remoteEnv.SUPABASE_API_PORT ?? 8000), (port) =>
+    fn(configFor(`http://127.0.0.1:${port}`, remoteEnv.SUPABASE_SERVICE_ROLE_KEY)),
+  );
 }
 
 /**

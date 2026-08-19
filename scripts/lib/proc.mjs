@@ -42,15 +42,42 @@ export function sleep(ms) {
   return new Promise((done) => setTimeout(done, ms));
 }
 
-/** The `KEY=value` pairs of an env file, without touching process.env. */
-export function readEnvFile(path) {
-  const entries = readFileSync(path, 'utf8')
+/** The `KEY=value` pairs of an env file's *text*, without touching process.env. */
+export function parseEnv(text) {
+  const entries = text
     .split('\n')
     .map((line) => line.match(/^([A-Z0-9_]+)=(.*)$/))
     .filter(Boolean)
     .map(([, key, value]) => [key, value.trim()]);
   return Object.fromEntries(entries);
 }
+
+/** The same, for a file here. The VM's own file is read over SSH — see lib/remote.mjs. */
+export function readEnvFile(path) {
+  return parseEnv(readFileSync(path, 'utf8'));
+}
+
+/**
+ * One argument, safe to hand to a remote shell.
+ *
+ * Only the SSH paths need this: a local spawn takes an argv array and no shell ever sees
+ * it, but `ssh host <command>` is a string the login shell up there re-parses. The SQL in
+ * `psqlQuery` is the reason — it is full of spaces and parentheses.
+ */
+export function shellQuote(value) {
+  return `'${String(value).replaceAll("'", `'\\''`)}'`;
+}
+
+/**
+ * The four ports this project publishes on loopback. Overridable because something else on
+ * your machine may already hold the default; the server never overrides them.
+ */
+export const ports = {
+  web: process.env.WEB_PORT ?? '3000',
+  api: process.env.SUPABASE_API_PORT ?? '8000',
+  db: process.env.POSTGRES_PORT ?? '5432',
+  studio: process.env.STUDIO_PORT ?? '54323',
+};
 
 /** deploy/.env if it exists, `{}` before the first run. Never throws. */
 export function readInstallEnv() {
@@ -76,12 +103,24 @@ export function isServerInstall(env = readInstallEnv()) {
  */
 export function createCompose(isServer) {
   const files = isServer ? ['-f', 'docker-compose.yml', '-f', 'docker-compose.server.yml'] : [];
-  return (args, options = {}) =>
+  const compose = (args, options = {}) =>
     run('docker', ['compose', ...files, ...args], {
       cwd: deployDir,
       stdio: 'inherit',
       ...options,
     });
+
+  // The same command line, described instead of run, for the callers that need to own the
+  // pipes: a pg_dump streaming out, a dump streaming in. `createRemoteCompose` in
+  // lib/remote.mjs answers the same two shapes, which is what lets lib/db.mjs work against
+  // either stack without knowing which one it has.
+  compose.spawn = (args) => ({
+    command: 'docker',
+    args: ['compose', ...files, ...args],
+    options: { cwd: deployDir },
+  });
+
+  return compose;
 }
 
 /** Every profile the stack knows, for the commands that should see all of it. */
