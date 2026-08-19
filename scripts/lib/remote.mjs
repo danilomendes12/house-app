@@ -254,9 +254,17 @@ const deployedFiles = [
  */
 export function syncDeployFiles(config) {
   const remoteDir = `${config.path}/deploy`;
+  // sudo to create, chown to own: DEPLOY_PATH lives under /opt, which belongs to root, and
+  // the deploy user is not root anywhere the VM is a cloud image (GCP opens no root login).
+  // The chown is what lets the rsync below — which runs as the user, not through sudo —
+  // write there at all, and it is idempotent.
   const prepared = ssh(
     config,
-    `mkdir -p ${remoteDir}/init ${remoteDir}/systemd ${remoteDir}/backups`,
+    [
+      'if [ "$(id -u)" -ne 0 ]; then SUDO=sudo; else SUDO=; fi',
+      `$SUDO mkdir -p ${remoteDir}/init ${remoteDir}/systemd ${remoteDir}/backups`,
+      `$SUDO chown -R "$(id -un):$(id -gn)" ${config.path}`,
+    ].join(' && '),
   );
   if (prepared.status !== 0) fail(`Não consegui criar ${remoteDir} na VM.`);
 
