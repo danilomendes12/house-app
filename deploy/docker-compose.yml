@@ -130,20 +130,17 @@ services:
       PGRST_DB_MAX_ROWS: '1000'
       PGRST_JWT_SECRET: ${JWT_SECRET:?}
       PGRST_ADMIN_SERVER_PORT: '3001'
-    healthcheck:
-      # The image has no wget or curl, so the admin server is spoken to with bash's
-      # /dev/tcp. /ready is 200 only once the schema cache is loaded.
-      test:
-        [
-          'CMD',
-          'bash',
-          '-c',
-          'exec 3<>/dev/tcp/127.0.0.1/3001 && printf "GET /ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n" >&3 && grep -q "200 OK" <&3',
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
+    # No healthcheck, and it is not an omission: on linux/amd64 this image ships **only**
+    # /bin/postgrest — no bash, no sh, no wget, no curl — and a Docker healthcheck can run
+    # nothing else. It went unnoticed until the first deploy because the arm64 variant (the
+    # one an Apple Silicon laptop pulls) *is* Debian-based and has bash, so the same
+    # `test:` passed here and failed on the VM with "bash: executable file not found",
+    # which left `web` in Created forever behind depends_on and Caddy answering 502.
+    #
+    # The readiness gate moved out of the container: `waitForApi` in scripts/lib/bringup.mjs
+    # polls /rest/v1 through Caddy with a real key before anything is declared up. That
+    # exercises caddy → rest → db from where the app actually stands, which the port check
+    # inside the container never did.
 
   # The app itself. Behind a profile because *here* the everyday flow runs Next on the host
   # with hot reload (`pnpm dev`) against these same services, and this is only the smoke
@@ -166,8 +163,12 @@ services:
     depends_on:
       auth:
         condition: service_healthy
+      # `service_started`, because `rest` declares no healthcheck (see above) and
+      # `service_healthy` on a service without one never becomes true. Nothing is lost: the
+      # Next server needs the API at request time, not at boot, and the deploy does not call
+      # itself done until waitForApi has had an answer.
       rest:
-        condition: service_healthy
+        condition: service_started
       caddy:
         condition: service_started
 
@@ -181,7 +182,7 @@ services:
       db:
         condition: service_healthy
       rest:
-        condition: service_healthy
+        condition: service_started
     ports:
       - '127.0.0.1:${STUDIO_PORT:-54323}:3000'
     environment:

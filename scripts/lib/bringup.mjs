@@ -2,7 +2,7 @@
  * The order the stack comes up in — written once, run in two places.
  *
  *   db + auth healthy → dump, if a migration is pending → migrations → rest, caddy, web
- *   → the owner user.
+ *   → the API answering → the owner user.
  *
  * None of that is preference. GoTrue owns `auth.users` and creates it in its own migrations,
  * and our first migration puts a trigger on that table, so pushing before `auth` is healthy
@@ -31,7 +31,16 @@
 import { resolve } from 'node:path';
 
 import { psqlQuery } from './db.mjs';
-import { createCompose, fail, migrationVersions, ports, repoRoot, run, step } from './proc.mjs';
+import {
+  createCompose,
+  fail,
+  migrationVersions,
+  ports,
+  repoRoot,
+  run,
+  sleep,
+  step,
+} from './proc.mjs';
 import { createRemoteCompose, inDeployDir, ssh, sshCapture, withTunnel } from './remote.mjs';
 
 /**
@@ -94,6 +103,29 @@ export async function apiQuery({ url, serviceRoleKey }, path) {
 }
 
 /**
+ * The first read through the API, retried until it answers.
+ *
+ * This is the readiness gate for `rest`, which cannot have a Docker healthcheck: the
+ * linux/amd64 PostgREST image contains one executable and it is not a shell (see
+ * deploy/docker-compose.yml). Waiting here is the better gate anyway — it goes caddy →
+ * rest → db with a real key, over the same path the app uses, instead of opening a port
+ * inside the container. What it waits out is PostgREST connecting and loading its schema
+ * cache, a couple of seconds on this database.
+ *
+ * `null` after the deadline means the API never answered, which is the caller's failure.
+ */
+async function waitForApi(api, path, timeoutMs = 90_000) {
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const rows = await apiQuery(api, path);
+    if (rows !== null) return rows;
+    if (Date.now() >= deadline) return null;
+    await sleep(2000);
+  }
+}
+
+/**
  * Names the owner, but only on an installation that has none.
  *
  * The marker is the `households` row: `provision_user` creates it when the auth user is
@@ -104,7 +136,8 @@ export async function apiQuery({ url, serviceRoleKey }, path) {
  */
 async function ensureOwner(runner, owner) {
   await runner.withApi(async (api) => {
-    const households = await apiQuery(api, '/rest/v1/households?select=id&limit=1');
+    step('Esperando a API responder…');
+    const households = await waitForApi(api, '/rest/v1/households?select=id&limit=1');
     if (households === null) fail(`A API não respondeu. Veja: ${runner.logsHint}`);
     if (households.length > 0) return;
 

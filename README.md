@@ -1,11 +1,37 @@
-# Finanças Pessoais
+# App da casa
 
-App da casa (duas pessoas, um household) para controle de gastos mensais e acompanhamento de
-patrimônio.
+O dia a dia de uma família — um casal e um filho — em um app só: o que se gastou no mês, o
+que a casa tem guardado, o que falta fazer e o que falta comprar.
+
+Não é "mais um app de finanças" que ganhou uma lista de tarefas de brinde. É o app da casa,
+e dinheiro é **uma** das seções dele. O que entra aqui é o que os dois precisam consultar ou
+registrar no meio da semana, do celular, com uma mão só — a lista do mercado empurrando o
+carrinho pesa tanto quanto o extrato do cartão.
 
 - **Web + PWA** (instalável no iPhone) — Next.js App Router
 - **Banco/Auth** — Supabase self-hosted (Postgres + GoTrue + PostgREST) em `docker compose`
-- **Entrada de dados** — manual, com import de CSV (fatura do cartão e posição da XP), idempotente
+- **Dados de dinheiro** — entrada manual, com import de CSV (fatura do cartão e posição da
+  XP), idempotente
+- **Uma casa, dois logins** — os adultos entram; o dado pertence ao household, não à pessoa
+
+## As seções
+
+| Aba                | O que resolve                                                                   |
+| ------------------ | ------------------------------------------------------------------------------- |
+| **Resumo**         | quanto foi gasto no mês, por categoria, com o patrimônio em uma linha           |
+| **Extrato mensal** | os lançamentos do mês; o botão flutuante é como se registra uma despesa na hora |
+| **Patrimônio**     | ativos, aportes e resgates, alocação da carteira e rentabilidade do período     |
+| **Tendências**     | a evolução por categoria — o que está crescendo mês a mês                       |
+| **Tarefas**        | a checklist compartilhada da casa: o que precisa ser feito, quem marcou, quando |
+| **Compras**        | duas listas separadas — **Casa** (lâmpada, pilha, pano de prato) e **Mercado**  |
+| **Ajustes**        | fila "a categorizar", regras de categorização automática e as categorias        |
+
+Tarefas e Compras não têm valor, categoria nem quantidade: são título e um check. Essa
+pobreza é de propósito — o que decide se elas são usadas é quantos toques custa acrescentar
+um item, não quantos campos ela oferece.
+
+A tab bar tem **seis** abas, e uma sétima não cabe no celular. Seção nova entra dentro de uma
+existente ou no header.
 
 ## Como rodar
 
@@ -49,6 +75,9 @@ cada vez, ou `WEB_PORT=3001 pnpm stack prod`.
 pnpm typecheck && pnpm lint && pnpm test && pnpm format:check
 ```
 
+É o mesmo que o CI roda a cada push e PR. Só um commit verde vira imagem no GHCR, e
+`pnpm server` só sabe fazer deploy de imagem — um commit quebrado não tem o que implantar.
+
 ### Banco
 
 O schema muda **só por migration**. A Supabase CLI continua sendo a dona dele, mas agora
@@ -63,24 +92,29 @@ pnpm stack reset && pnpm dev              # recria o banco do zero, com seed
 
 ## Documentação
 
-| Arquivo                                  | Conteúdo                                                                 |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| [`docs/SPEC.md`](./docs/SPEC.md)         | Requisitos, arquitetura, modelo de dados, import de CSV e plano de fases |
-| [`docs/DEPLOY.md`](./docs/DEPLOY.md)     | Hospedagem: a VM na GCP, deploy, acesso à produção, backup e restore     |
-| [`deploy/README.md`](./deploy/README.md) | O que é cada container da stack, e por quê                               |
-| [`CLAUDE.md`](./CLAUDE.md)               | Contexto e convenções para desenvolvimento com Claude Code               |
+| Arquivo                                  | Conteúdo                                                             |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| [`docs/DEPLOY.md`](./docs/DEPLOY.md)     | Hospedagem: a VM na GCP, deploy, acesso à produção, backup e restore |
+| [`deploy/README.md`](./deploy/README.md) | O que é cada container da stack, e por quê                           |
+| [`CLAUDE.md`](./CLAUDE.md)               | Convenções, regras de negócio e armadilhas — para humanos também     |
+
+Não existe mais um `SPEC.md`: ele foi removido do repositório, e as decisões de produto que
+importavam estão no `CLAUDE.md`. Comentários no código ainda citam "SPEC §x" — são
+referências históricas a um arquivo que não existe; leia-os como "isto foi decidido, não é
+acidente", não como um ponteiro a seguir.
 
 ## Estrutura
 
 ```
 apps/web        Next.js 16 (App Router), auth e UI
-  app/(dashboard)  telas autenticadas: resumo, tendências, lançamentos, patrimônio,
-                   tarefas e ajustes (categorias, regras, import)
+  app/(dashboard)  telas autenticadas: resumo, extrato, patrimônio, tendências, tarefas,
+                   compras e ajustes (categorias, regras, import)
   lib/db           acesso ao Postgres e conversão bigint↔centavos (server-only)
   lib/supabase     clients e tipos gerados do schema
   public           manifest, ícones e service worker da PWA
 packages/shared Regras puras e testáveis: dinheiro (centavos/bigint), datas
-                (YYYY-MM-DD), resumo do mês, tendências, import CSV e patrimônio
+                (YYYY-MM-DD), resumo do mês, tendências, import CSV, patrimônio e as
+                duas listas de compras
 supabase        Migrations SQL e seed (a CLI é ferramenta, não stack)
 deploy          A stack: docker compose (base + o override do servidor), Caddy, os
                 segredos, o timer de backup e os dumps
@@ -118,8 +152,9 @@ que o Postgres já sabe.
 
 ## Auth e household
 
-O app é de **uma casa**: duas pessoas, um conjunto de dados. Cada uma tem seu login; a linha
-pertence ao household (`household_id`), e `user_id` só registra quem lançou.
+O app é de **uma casa**. O casal tem um login cada; o filho não tem conta — o que existe é o
+household, e toda linha pertence a ele (`household_id`). O `user_id` só registra quem lançou,
+para atribuição: não é ele que autoriza a leitura.
 
 Entra-se com **e-mail e senha**. Não há cadastro, não há convite pela UI e não há "esqueci
 minha senha" — os usuários são criados por script, e a senha é redefinida por script. Um
@@ -161,14 +196,12 @@ Os scripts são idempotentes: rodar de novo **não** troca a senha de quem já e
 Uma **VM `e2-micro` do Always Free do Google Compute Engine** (2 vCPU compartilhados, 1 GB,
 30 GB, `us-east1`, Ubuntu 24.04), rodando a mesma stack `docker compose`, com TLS do Let's
 Encrypt em **https://momolados.com.br/financial** (domínio do registro.br; o app mora no
-subcaminho `/financial` — [`docs/DEPLOY.md` §1.3](./docs/DEPLOY.md)). A imagem do app vem do GHCR, construída pelo CI —
-a VM é host de containers, não máquina de build.
+subcaminho `/financial` — [`docs/DEPLOY.md` §1.3](./docs/DEPLOY.md)). A imagem do app vem do
+GHCR, construída pelo CI — a VM é host de containers, não máquina de build.
 
 Custo: **~R$ 20/mês**, e é só o IPv4 público — a VM e o disco estão no free tier que não
-expira. A comparação com a AWS que levou a essa escolha está na
-[Parte 7 do `docs/HOSTING.md`](./docs/HOSTING.md#parte-7--gcp--aws-qual-das-duas-é-a-mais-barata);
-o passo a passo — o que o `gcloud` já fez, o que sobra para você, deploy, backup, restore,
-acesso — está em [`docs/DEPLOY.md`](./docs/DEPLOY.md).
+expira. O passo a passo — o que o `gcloud` já fez, o que sobra para você, deploy, backup,
+restore, acesso — está em [`docs/DEPLOY.md`](./docs/DEPLOY.md).
 
 ```bash
 pnpm server init --owner voce@exemplo.com   # uma vez, numa VM recém-criada
@@ -204,18 +237,10 @@ de carregar. É o que impede o trigger `provision_user` de criar um household du
 trazer usuários por cima de um banco já provisionado. As senhas atravessam (o hash bcrypt
 vai no dump); as sessões de outra instalação, não.
 
-## Status das fases
+## Nomes herdados
 
-- [x] Fase 0 — Fundação (monorepo, Supabase, auth, CI)
-- [x] Fase 1 — MVP Gastos (transações, categorias, dashboard; os orçamentos saíram na Fase 12)
-- [x] Fase 2 — Tendências + PWA
-- [x] Fase 3 — Entrada em lote (import CSV, regras, fila "a categorizar")
-- [x] Fase 4 — Patrimônio (ativos, aportes, snapshots, evolução)
-- [ ] Fase 5 — Refinos
-- [x] Fase 6 — Casa (household compartilhado, RLS por membership, `db:invite`)
-- [x] Fase 7 — Import da posição consolidada da XP
-- [x] Fase 8 — Carteira (alocação, rentabilidade por período, aporte vs. valorização)
-- [x] Fase 9 — Self-hosted (login por senha, imagem portátil, `docker compose`)
-- [x] Fase 10 — Um fluxo só (stack única em Docker, fim da stack paralela da CLI)
-- [x] Fase 11 — Hospedagem (VM `e2-micro` do Always Free da GCP, TLS em momolados.com.br, backup com restore testado)
-- [x] Fase 12 — Tarefas (fim do orçamento; a aba virou a checklist compartilhada da casa)
+O repositório se chama `my-financial-app`, os pacotes são `@finance/*` e a PWA se instala
+como "Finanças": nomes de quando o app era só de dinheiro. O escopo cresceu (tarefas na
+Fase 12, compras na Fase 13) e os nomes não acompanharam. Nada disso é significativo — se um
+dia renomear, é uma passada em `package.json`, no manifest e nos títulos das telas, sem
+efeito em schema, dado ou deploy.

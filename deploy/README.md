@@ -83,7 +83,7 @@ A VM tem o **seu próprio** `deploy/.env`, gerado lá por `gen-secrets.mjs --ser
 ficaram num laptop. Ele ganha duas linhas a mais, `DEPLOY_TARGET=server` e `DOMAIN`.
 
 Só segredos e portas. Quem é o dono da instalação não está aqui — isso é fato do banco,
-escrito uma vez por `pnpm db:owner <email>` (SPEC §12).
+escrito uma vez por `pnpm db:owner <email>`.
 
 Os quatro valores gerados (`POSTGRES_PASSWORD`, `JWT_SECRET`, `SUPABASE_ANON_KEY`,
 `SUPABASE_SERVICE_ROLE_KEY`) **não se editam à mão**: as duas chaves são JWTs assinados com

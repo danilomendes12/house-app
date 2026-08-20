@@ -1,9 +1,9 @@
 # Hospedagem — Google Compute Engine (e2-micro Always Free)
 
-Onde este app roda em produção, como colocá-lo lá e como operá-lo depois. A decisão está
-registrada no [SPEC §11 (Q5)](./SPEC.md#11-questões-em-aberto) e no §12, com as medições e a
-comparação de preço em [`docs/HOSTING.md` (Parte 7)](./HOSTING.md#parte-7--gcp--aws-qual-das-duas-é-a-mais-barata);
-aqui é o procedimento.
+Onde este app roda em produção, como colocá-lo lá e como operá-lo depois. A escolha da GCP
+saiu de um estudo de preço contra a AWS que não vive mais no repositório; o que sobrou dele
+está resumido em [O que **não** existe aqui](#o-que-não-existe-aqui-e-é-de-propósito) e nas
+notas de custo abaixo. Aqui é o procedimento.
 
 **Resumo:** uma VM `e2-micro` (2 vCPU compartilhados, 1 GB, 30 GB de disco standard) em
 **`us-east1`** (South Carolina), Ubuntu 24.04, rodando a mesma stack `docker compose` de
@@ -142,9 +142,10 @@ lugar é um commit + um build do CI + um deploy, não uma variável no `.env`.
 | 4 | [`apps/web/app/layout.tsx`](../apps/web/app/layout.tsx) | `manifest: '/financial/manifest.webmanifest'` e o `apple` icon idem. O basePath **não** prefixa referências absolutas escritas à mão — a doc do Next diz isso explicitamente para imagens do `public/`. |
 | 5 | [`apps/web/components/service-worker.tsx`](../apps/web/components/service-worker.tsx) | `register('/financial/sw.js')`. O escopo de um service worker é o diretório dele, então em `/financial/sw.js` ele controla exatamente `/financial/*` — que é o que se quer. |
 | 6 | [`apps/web/public/sw.js`](../apps/web/public/sw.js) | `OFFLINE_URL`, o `PRECACHED` e os prefixos que ele casa (`/_next/static`, `/icons/`) ganham `/financial`. |
-| 7 | [`deploy/docker-compose.server.yml`](../deploy/docker-compose.server.yml) | `GOTRUE_SITE_URL: https://${DOMAIN}/financial`. Nada constrói link por e-mail hoje (não há SMTP nem recuperação de senha — SPEC §12), mas deixar a raiz ali é uma mentira esperando a primeira feature que ler isso. |
+| 7 | [`deploy/docker-compose.server.yml`](../deploy/docker-compose.server.yml) | `GOTRUE_SITE_URL: https://${DOMAIN}/financial`. Nada constrói link por e-mail hoje (não há SMTP nem recuperação de senha, por decisão), mas deixar a raiz ali é uma mentira esperando a primeira feature que ler isso. |
 | 8 | [`scripts/server.mjs`](../scripts/server.mjs) | A checagem final (`assertPubliclyServed`) pede `https://<domínio>/login`; passa a pedir `https://<domínio>/financial/login`. Sem isso o deploy "falha" num app que está no ar. |
 | 9 | [`apps/web/proxy.ts`](../apps/web/proxy.ts) / [`lib/supabase/proxy.ts`](../apps/web/lib/supabase/proxy.ts) | **Conferir, não mudar às cegas.** O gate de sessão compara `request.nextUrl.pathname` com `/login` e redireciona clonando a URL. O Next tira o basePath do `pathname` e o repõe ao serializar, então isso *deve* continuar valendo — mas é o único ponto que depende de comportamento implícito, e é o primeiro a testar depois da mudança: entrar deslogado em `/financial/transactions` tem que cair em `/financial/login`, não em `/login`. |
+| 10 | [`Dockerfile`](../Dockerfile) | O `HEALTHCHECK` pede `/financial/login`. Foi o item que passou batido na primeira vez: o `wget --spider` num `/login` seco recebe 404, sai 1, e o container fica `unhealthy` com o Next no ar — `docker compose up --wait` derruba o deploy com "container financas-web-1 is unhealthy" sem nada estar quebrado. Como `basePath` está assado na mesma imagem, o healthcheck dela tem que conhecer o prefixo. |
 
 O bloco do Caddy fica assim:
 
@@ -298,7 +299,7 @@ no primeiro login. O script põe o e-mail na allowlist já apontando para o hous
 existente — é isso que faz os dois verem os mesmos dados em vez de cada um cair numa casa
 própria.
 
-**Trocar senha e recuperar senha não existem na UI, por decisão** (SPEC §12). Não há tela de
+**Trocar senha e recuperar senha não existem na UI, por decisão.** Não há tela de
 "esqueci minha senha" e não deve haver: um fluxo de recuperação por e-mail traria o SMTP de
 volta, que é exatamente a dependência que a Fase 9 removeu.
 
@@ -416,7 +417,7 @@ Três consequências que valem saber:
 - **As senhas atravessam.** O hash bcrypt em `auth.users.encrypted_password` não é assinado
   por nada; ele vem no dump e continua valendo.
 - **`external_id` e `external_ref` vêm junto**, porque o dump é completo. São eles que fazem
-  o import de CSV e o da posição da XP serem idempotentes (SPEC §7); um restore que os
+  o import de CSV e o da posição da XP serem idempotentes; um restore que os
   perdesse duplicaria tudo no import seguinte, em silêncio.
 
 ### Atualizar o sistema da VM
@@ -452,15 +453,14 @@ Três coisas que valem saber sobre esta hospedagem em particular:
   segunda VM, network tier Premium).
 - **O disco grátis é HDD** (`pd-standard`). Para um banco de 11 MB que cabe em page cache
   isso não aparece em runtime; aparece num `docker pull` e num `apt upgrade`, que são
-  visivelmente mais lentos que num SSD. É o preço do free tier, e é aceito
-  ([HOSTING §7.8](./HOSTING.md#78-o-que-o-preço-não-mostra)).
+  visivelmente mais lentos que num SSD. É o preço do free tier, e é aceito.
 
 ---
 
 ## O que **não** existe aqui, e é de propósito
 
-- **Build na VM.** Ela tem 1 GB de RAM e o `next build` precisa de ~1150 MiB
-  ([HOSTING §1.1](./HOSTING.md)). Quem constrói é o CI; a VM puxa a imagem. Consequência
+- **Build na VM.** Ela tem 1 GB de RAM e o `next build` precisa de ~1150 MiB (medido),
+  contra 305 MiB do runtime. Quem constrói é o CI; a VM puxa a imagem. Consequência
   aceita: o deploy deixou de ser autossuficiente — ele depende do CI ter terminado.
 - **Deploy automático.** O CI publica a imagem; quem faz o deploy é você, com `pnpm server`.
   Para duas pessoas isso é uma feature: o deploy acontece quando você está olhando.

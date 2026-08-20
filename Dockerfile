@@ -50,7 +50,12 @@ COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/public ./apps/web/publi
 USER nextjs
 EXPOSE 3000
 
+# `/financial/login`, com o prefixo: `basePath` é build-time e está assado nesta mesma
+# imagem (docs/DEPLOY.md §1.3), então o app não atende mais na raiz. Um `/login` seco
+# responde 404, o wget sai 1 e o container fica `unhealthy` para sempre — com o Next no ar
+# e servindo. O sintoma é `docker compose up --wait` falhando com
+# "container financas-web-1 is unhealthy" num deploy em que nada está errado.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/login || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/financial/login || exit 1
 
 CMD ["node", "apps/web/server.js"]
