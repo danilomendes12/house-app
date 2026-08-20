@@ -4,7 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cardClass } from '@/components/fields';
 import { countUncategorizedTransactions } from '@/lib/db/transactions';
 
-export const metadata = { title: 'Ajustes · Finanças' };
+export const metadata = { title: 'Ajustes · App da casa' };
 
 export default async function SettingsPage() {
   const pending = await countUncategorizedTransactions();

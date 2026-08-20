@@ -239,8 +239,13 @@ vai no dump); as sessões de outra instalação, não.
 
 ## Nomes herdados
 
-O repositório se chama `my-financial-app`, os pacotes são `@finance/*` e a PWA se instala
-como "Finanças": nomes de quando o app era só de dinheiro. O escopo cresceu (tarefas na
-Fase 12, compras na Fase 13) e os nomes não acompanharam. Nada disso é significativo — se um
-dia renomear, é uma passada em `package.json`, no manifest e nos títulos das telas, sem
-efeito em schema, dado ou deploy.
+O repositório se chama `my-financial-app`, os pacotes são `@finance/*`, os caches do service
+worker são `finance-*` e o app é servido em `momolados.com.br/financial`: nomes de quando o
+app era só de dinheiro. O escopo cresceu (tarefas na Fase 12, compras na Fase 13) e os nomes
+não acompanharam.
+
+O que o usuário vê já acompanhou: a UI e a PWA se chamam **"App da casa"**. O que sobrou é
+tudo interno, e é de propósito — renomear pacote mexe em imports, lockfile e CI; trocar o
+nome dos caches invalida o de quem já tem o app instalado; e mudar a URL ou o `id` do
+manifest faz o iPhone tratar a PWA como outro app, deixando um ícone órfão na tela inicial.
+Nada disso aparece para quem usa, e nada disso vale o troco.

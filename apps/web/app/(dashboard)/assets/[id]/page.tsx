@@ -27,7 +27,7 @@ import { removeAsset, removeAssetEvent, removeAssetSnapshot, toggleAssetClosed }
 import { AssetEventForm } from '../event-form';
 import { AssetSnapshotForm } from '../snapshot-form';
 
-export const metadata = { title: 'Ativo · Finanças' };
+export const metadata = { title: 'Ativo · App da casa' };
 
 /**
  * The series the chart draws: one point per day the asset was valued or money moved,

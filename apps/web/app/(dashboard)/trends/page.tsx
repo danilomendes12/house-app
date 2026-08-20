@@ -16,7 +16,7 @@ import { getTrendOverview, type CategoryTrend } from '@/lib/db/trends';
 import { resolveMonth } from '@/lib/month-param';
 import { DEFAULT_TREND_WINDOW, TREND_WINDOWS, resolveTrendWindow } from '@/lib/trend-param';
 
-export const metadata = { title: 'Tendências · Finanças' };
+export const metadata = { title: 'Tendências · App da casa' };
 
 function CategoryRow({ trend, months }: { trend: CategoryTrend; months: string[] }) {
   const name = trend.category?.name ?? 'A categorizar';

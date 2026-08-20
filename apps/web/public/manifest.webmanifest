@@ -1,7 +1,7 @@
 {
-  "name": "Finanças",
-  "short_name": "Finanças",
-  "description": "Controle de gastos mensais e acompanhamento de patrimônio.",
+  "name": "App da casa",
+  "short_name": "App da casa",
+  "description": "Gastos, patrimônio, tarefas da casa e listas de compras da família em um só lugar.",
   "lang": "pt-BR",
   "dir": "ltr",
   "start_url": "/financial/",
@@ -36,6 +36,12 @@
       "name": "Nova despesa",
       "short_name": "Nova despesa",
       "url": "/financial/transactions/new",
+      "icons": [{ "src": "/financial/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Lista do mercado",
+      "short_name": "Mercado",
+      "url": "/financial/shopping/market",
       "icons": [{ "src": "/financial/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ]

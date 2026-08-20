@@ -10,7 +10,7 @@ import { getMonthOverview, type CategoryLine } from '@/lib/db/month-overview';
 import { getNetWorthOverview } from '@/lib/db/net-worth';
 import { resolveMonth } from '@/lib/month-param';
 
-export const metadata = { title: 'Resumo · Finanças' };
+export const metadata = { title: 'Resumo · App da casa' };
 
 /**
  * The bar is the category's share of the month — the "donut/lista" breakdown of SPEC §9,

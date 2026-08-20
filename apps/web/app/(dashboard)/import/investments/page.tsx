@@ -3,7 +3,7 @@ import { ChevronLeft } from 'lucide-react';
 import { todayIso } from '@finance/shared';
 import { PositionForm } from './position-form';
 
-export const metadata = { title: 'Importar investimentos · Finanças' };
+export const metadata = { title: 'Importar investimentos · App da casa' };
 
 export default function ImportPositionsPage() {
   return (

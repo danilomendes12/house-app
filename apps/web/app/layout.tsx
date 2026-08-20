@@ -3,13 +3,13 @@ import { ServiceWorkerRegistrar } from '@/components/service-worker';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Finanças',
-  description: 'Controle de gastos mensais e acompanhamento de patrimônio.',
+  title: 'App da casa',
+  description: 'Gastos, patrimônio, tarefas da casa e listas de compras da família em um só lugar.',
   // Prefixed by hand, and it has to be: basePath ('/financial', next.config.ts) rewrites what
   // Next emits — /_next/*, next/link, redirect() — and leaves strings like these alone. Checked
   // in the rendered HTML, not assumed. The full list of hand-written URLs is docs/DEPLOY.md §1.3.
   manifest: '/financial/manifest.webmanifest',
-  applicationName: 'Finanças',
+  applicationName: 'App da casa',
   icons: {
     icon: [
       { url: '/financial/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   // iOS ignores the manifest: "Adicionar à Tela de Início" reads these instead.
   appleWebApp: {
     capable: true,
-    title: 'Finanças',
+    title: 'App da casa',
     statusBarStyle: 'default',
   },
 };

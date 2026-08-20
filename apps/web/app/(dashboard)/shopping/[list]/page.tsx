@@ -18,9 +18,9 @@ import { ShoppingForm } from '../shopping-form';
 
 export async function generateMetadata({ params }: { params: Promise<{ list: string }> }) {
   const { list } = await params;
-  if (!isShoppingList(list)) return { title: 'Compras · Finanças' };
+  if (!isShoppingList(list)) return { title: 'Compras · App da casa' };
 
-  return { title: `Compras · ${SHOPPING_LIST_LABELS[list]} · Finanças` };
+  return { title: `Compras · ${SHOPPING_LIST_LABELS[list]} · App da casa` };
 }
 
 /**

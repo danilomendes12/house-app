@@ -12,7 +12,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-3xl flex-col">
       <header className="flex items-center justify-between gap-3 px-4 py-4">
-        <span className="text-lg font-semibold tracking-tight">Finanças</span>
+        <span className="text-lg font-semibold tracking-tight">App da casa</span>
         <div className="flex items-center gap-2">
           <span className="hidden text-sm text-[var(--color-ink-muted)] sm:inline">
             {user.email}

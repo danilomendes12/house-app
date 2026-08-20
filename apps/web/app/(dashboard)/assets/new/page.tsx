@@ -1,6 +1,6 @@
 import { AssetForm } from '../asset-form';
 
-export const metadata = { title: 'Novo ativo · Finanças' };
+export const metadata = { title: 'Novo ativo · App da casa' };
 
 export default function NewAssetPage() {
   return (

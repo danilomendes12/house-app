@@ -5,7 +5,7 @@ import { EmptyState, cardClass } from '@/components/fields';
 import { countTransactionsByCategory, listCategories } from '@/lib/db/categories';
 import type { Category } from '@/lib/db/types';
 
-export const metadata = { title: 'Categorias · Finanças' };
+export const metadata = { title: 'Categorias · App da casa' };
 
 function CategoryGroup({
   title,

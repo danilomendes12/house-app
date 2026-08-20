@@ -4,7 +4,7 @@ import { countTransactionsByCategory, listCategories } from '@/lib/db/categories
 import { removeCategory, toggleCategoryArchived } from '../actions';
 import { CategoryForm } from '../category-form';
 
-export const metadata = { title: 'Editar categoria · Finanças' };
+export const metadata = { title: 'Editar categoria · App da casa' };
 
 export default async function EditCategoryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

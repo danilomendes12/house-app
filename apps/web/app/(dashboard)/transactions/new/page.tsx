@@ -3,7 +3,7 @@ import { listCategories } from '@/lib/db/categories';
 import { resolveMonth } from '@/lib/month-param';
 import { TransactionForm } from '../transaction-form';
 
-export const metadata = { title: 'Nova transação · Finanças' };
+export const metadata = { title: 'Nova transação · App da casa' };
 
 export default async function NewTransactionPage({
   searchParams,

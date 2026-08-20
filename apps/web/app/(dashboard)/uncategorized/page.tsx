@@ -5,7 +5,7 @@ import { listCategories } from '@/lib/db/categories';
 import { listUncategorizedTransactions } from '@/lib/db/transactions';
 import { Queue } from './queue';
 
-export const metadata = { title: 'A categorizar · Finanças' };
+export const metadata = { title: 'A categorizar · App da casa' };
 
 export default async function UncategorizedPage() {
   const [transactions, categories] = await Promise.all([

@@ -27,7 +27,7 @@ import { YieldTag } from '@/components/yield-tag';
 import { getNetWorthOverview, type AssetLine, type NetWorthOverview } from '@/lib/db/net-worth';
 import { resolveAllocationDimension, resolveAssetSort, resolvePeriod } from '@/lib/period-param';
 
-export const metadata = { title: 'Patrimônio · Finanças' };
+export const metadata = { title: 'Patrimônio · App da casa' };
 
 const percentFormatter = new Intl.NumberFormat('pt-BR', {
   style: 'percent',

@@ -8,7 +8,7 @@ import { listCategoryRules } from '@/lib/db/category-rules';
 import { removeRule } from './actions';
 import { RuleForm } from './rule-form';
 
-export const metadata = { title: 'Regras · Finanças' };
+export const metadata = { title: 'Regras · App da casa' };
 
 export default async function RulesPage() {
   const [rules, categories] = await Promise.all([listCategoryRules(), listCategories()]);

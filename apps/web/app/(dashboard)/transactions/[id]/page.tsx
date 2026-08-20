@@ -7,7 +7,7 @@ import { resolveMonth } from '@/lib/month-param';
 import { removeTransaction } from '../actions';
 import { TransactionForm } from '../transaction-form';
 
-export const metadata = { title: 'Editar transação · Finanças' };
+export const metadata = { title: 'Editar transação · App da casa' };
 
 export default async function EditTransactionPage({
   params,

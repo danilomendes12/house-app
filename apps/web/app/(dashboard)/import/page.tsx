@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
 import { ImportForm } from './import-form';
 
-export const metadata = { title: 'Importar CSV · Finanças' };
+export const metadata = { title: 'Importar CSV · App da casa' };
 
 export default function ImportPage() {
   return (

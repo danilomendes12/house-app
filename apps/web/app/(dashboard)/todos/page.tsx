@@ -7,7 +7,7 @@ import type { Todo } from '@/lib/db/types';
 import { clearDoneTodos, removeTodo, toggleTodo } from './actions';
 import { TodoForm } from './todo-form';
 
-export const metadata = { title: 'Tarefas · Finanças' };
+export const metadata = { title: 'Tarefas · App da casa' };
 
 /**
  * A row is two forms side by side rather than a checkbox plus JavaScript: the whole label

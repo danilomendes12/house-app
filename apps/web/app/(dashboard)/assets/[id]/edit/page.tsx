@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getAsset } from '@/lib/db/assets';
 import { AssetForm } from '../../asset-form';
 
-export const metadata = { title: 'Editar ativo · Finanças' };
+export const metadata = { title: 'Editar ativo · App da casa' };
 
 export default async function EditAssetPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
