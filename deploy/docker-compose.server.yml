@@ -47,7 +47,7 @@ services:
     # `:?` with no default on purpose: a deploy that forgot which version it is deploying
     # should refuse to start, not silently keep serving whatever is already running.
     # `pnpm server` writes WEB_IMAGE_TAG into this installation's .env on every deploy.
-    image: ghcr.io/danilomendes12/my-financial-app/web:${WEB_IMAGE_TAG:?defina WEB_IMAGE_TAG — pnpm server grava}
+    image: ghcr.io/danilomendes12/house-app/web:${WEB_IMAGE_TAG:?defina WEB_IMAGE_TAG — pnpm server grava}
     # No ports: the app is reached through Caddy, on the compose network, and publishing it
     # would be a second door into the same room. The base file's 127.0.0.1:3000 stays — it
     # is loopback, so it is reachable only over an SSH tunnel, which is what you want when
